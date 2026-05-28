@@ -276,11 +276,12 @@ input:focus,select:focus{border-color:var(--blue)}
   <div class="form-card">
     <div id="mov-alert" class="alert"></div>
 
-    <div class="form-g">
-      <label>Seleccionar del catálogo <span style="font-weight:400;color:var(--g400)">(opcional — auto-completa los campos)</span></label>
-      <select id="sel-catalogo" onchange="onCatalogoSelect()">
-        <option value="">— Buscar en catálogo —</option>
-      </select>
+    <div class="form-g" style="position:relative">
+      <label>Buscar en catálogo <span style="font-weight:400;color:var(--g400)">(opcional — auto-completa los campos)</span></label>
+      <input type="text" id="cat-search" placeholder="Escribí SKU, nombre o color..."
+             oninput="onCatSearch()" onfocus="onCatFocus()"
+             onblur="setTimeout(hideCatDrop,200)" autocomplete="off"/>
+      <div id="cat-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--blue);border-top:none;border-radius:0 0 var(--r) var(--r);max-height:200px;overflow-y:auto;z-index:50;box-shadow:var(--shmd)"></div>
     </div>
 
     <div class="form-g">
@@ -370,27 +371,28 @@ input:focus,select:focus{border-color:var(--blue)}
 <!-- ─── MODAL: Nuevo producto ─────────────────────────────────────────────── -->
 <div class="overlay" id="modal-producto">
   <div class="modal">
-    <div class="modal-h">Nuevo producto</div>
+    <div class="modal-h" id="mprod-titulo">Nuevo producto</div>
+    <input type="hidden" id="mprod-id" value=""/>
     <div id="mprod-alert" class="alert"></div>
     <div class="form-g">
       <label>SKU</label>
       <input type="text" id="mprod-sku" placeholder="Ej: SKU001, MOD-A..."
              oninput="this.value=this.value.toUpperCase()"
-             onkeydown="if(event.key==='Enter')crearProducto()"/>
+             onkeydown="if(event.key==='Enter')guardarProducto()"/>
     </div>
     <div class="form-g">
       <label>Nombre del producto</label>
       <input type="text" id="mprod-nombre" placeholder="Ej: Silla Ejecutiva, Mesa Ratona..."
-             onkeydown="if(event.key==='Enter')crearProducto()"/>
+             onkeydown="if(event.key==='Enter')guardarProducto()"/>
     </div>
     <div class="form-g">
       <label>Color</label>
       <input type="text" id="mprod-color" placeholder="Ej: Blanco, Negro, Natural..."
-             onkeydown="if(event.key==='Enter')crearProducto()"/>
+             onkeydown="if(event.key==='Enter')guardarProducto()"/>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModalProducto()">Cancelar</button>
-      <button class="btn btn-primary" onclick="crearProducto()">Guardar</button>
+      <button class="btn btn-primary" id="mprod-save-btn" onclick="guardarProducto()">Guardar</button>
     </div>
   </div>
 </div>
@@ -461,6 +463,14 @@ async function post(url, data) {
 }
 async function del(url) {
   const r = await fetch(url, { method: 'DELETE' });
+  return r.json();
+}
+async function put(url, data) {
+  const r = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
   return r.json();
 }
 
@@ -624,29 +634,46 @@ async function loadCatalogoSection() {
       <td><strong>${e(p.sku)}</strong></td>
       <td>${e(p.nombre)}</td>
       <td>${e(p.color || '—')}</td>
-      <td><button class="btn btn-danger" onclick="borrarProducto(${p.id})">Eliminar</button></td>
+      <td style="display:flex;gap:.4rem">
+        <button class="btn btn-ghost" onclick="editarProducto(${p.id})">Editar</button>
+        <button class="btn btn-danger" onclick="borrarProducto(${p.id})">Eliminar</button>
+      </td>
     </tr>`).join('');
 }
 
-function openModalProducto() {
-  ['mprod-sku','mprod-nombre','mprod-color'].forEach(id => document.getElementById(id).value = '');
+function openModalProducto(prod = null) {
+  const edit = prod !== null;
+  document.getElementById('mprod-id').value    = edit ? prod.id : '';
+  document.getElementById('mprod-sku').value   = edit ? prod.sku   : '';
+  document.getElementById('mprod-nombre').value = edit ? prod.nombre : '';
+  document.getElementById('mprod-color').value  = edit ? (prod.color || '') : '';
+  document.getElementById('mprod-titulo').textContent  = edit ? 'Editar producto' : 'Nuevo producto';
+  document.getElementById('mprod-save-btn').textContent = edit ? 'Actualizar' : 'Guardar';
   document.getElementById('mprod-alert').classList.remove('show');
   document.getElementById('modal-producto').classList.add('open');
   setTimeout(() => document.getElementById('mprod-sku').focus(), 60);
+}
+
+function editarProducto(id) {
+  const p = catalogo.find(x => x.id === id);
+  if (p) openModalProducto(p);
 }
 
 function closeModalProducto() {
   document.getElementById('modal-producto').classList.remove('open');
 }
 
-async function crearProducto() {
+async function guardarProducto() {
+  const id     = document.getElementById('mprod-id').value;
   const sku    = document.getElementById('mprod-sku').value.trim().toUpperCase();
   const nombre = document.getElementById('mprod-nombre').value.trim();
   const color  = document.getElementById('mprod-color').value.trim();
-  const alert  = document.getElementById('mprod-alert');
-  if (!sku || !nombre) { showAlert(alert, 'err', 'SKU y Nombre son obligatorios.'); return; }
-  const res = await post('/api/productos', { sku, nombre, color });
-  if (res.error) { showAlert(alert, 'err', res.error); return; }
+  const alertEl = document.getElementById('mprod-alert');
+  if (!sku || !nombre) { showAlert(alertEl, 'err', 'SKU y Nombre son obligatorios.'); return; }
+  const res = id
+    ? await put('/api/productos/' + id, { sku, nombre, color })
+    : await post('/api/productos', { sku, nombre, color });
+  if (res.error) { showAlert(alertEl, 'err', res.error); return; }
   closeModalProducto();
   loadCatalogoSection();
 }
@@ -657,32 +684,62 @@ async function borrarProducto(id) {
   loadCatalogoSection();
 }
 
-function _refreshCatalogoSelect() {
-  const sel = document.getElementById('sel-catalogo');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Buscar en catálogo —</option>';
-  catalogo.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = `${e(p.sku)} — ${e(p.nombre)}${p.color ? ' — ' + e(p.color) : ''}`;
-    sel.appendChild(opt);
-  });
+// ── Buscador de catálogo en formulario de movimiento ─────────────────────────
+function _renderCatDrop(items) {
+  const drop = document.getElementById('cat-drop');
+  if (!items.length) {
+    drop.innerHTML = '<div style="padding:.6rem .85rem;color:var(--g400);font-size:.83rem">Sin resultados</div>';
+  } else {
+    drop.innerHTML = items.map(p => `
+      <div style="padding:.55rem .85rem;cursor:pointer;border-bottom:1px solid var(--g200);font-size:.83rem"
+           onmousedown="selectCatItem(${p.id})"
+           onmouseover="this.style.background='var(--blue-lt)'"
+           onmouseout="this.style.background=''">
+        <strong>${e(p.sku)}</strong> — ${e(p.nombre)}${p.color ? ' <span style="color:var(--g400)">· ' + e(p.color) + '</span>' : ''}
+      </div>`).join('');
+  }
+  drop.style.display = '';
+}
+
+function onCatSearch() {
+  const q = document.getElementById('cat-search').value.trim().toLowerCase();
+  if (!q) { hideCatDrop(); return; }
+  const filtered = catalogo.filter(p =>
+    p.nombre.toLowerCase().includes(q) ||
+    p.sku.toLowerCase().includes(q) ||
+    (p.color && p.color.toLowerCase().includes(q))
+  );
+  _renderCatDrop(filtered);
+}
+
+function onCatFocus() {
+  const q = document.getElementById('cat-search').value.trim().toLowerCase();
+  const list = q ? catalogo.filter(p =>
+    p.nombre.toLowerCase().includes(q) ||
+    p.sku.toLowerCase().includes(q) ||
+    (p.color && p.color.toLowerCase().includes(q))
+  ) : catalogo;
+  if (list.length) _renderCatDrop(list);
+}
+
+function hideCatDrop() {
+  const d = document.getElementById('cat-drop');
+  if (d) d.style.display = 'none';
+}
+
+function selectCatItem(id) {
+  const p = catalogo.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('cat-search').value = `${p.sku} — ${p.nombre}${p.color ? ' · ' + p.color : ''}`;
+  document.getElementById('inp-prod').value   = p.nombre;
+  document.getElementById('inp-color').value  = p.color || '';
+  hideCatDrop();
 }
 
 function fillFromStock(producto, color, ppk) {
   document.getElementById('inp-prod').value  = producto;
   document.getElementById('inp-color').value = color;
   document.getElementById('inp-ppk').value   = ppk;
-}
-
-function onCatalogoSelect() {
-  const id = parseInt(document.getElementById('sel-catalogo').value);
-  if (!id) return;
-  const p = catalogo.find(x => x.id === id);
-  if (p) {
-    document.getElementById('inp-prod').value  = p.nombre;
-    document.getElementById('inp-color').value = p.color;
-  }
 }
 
 // ── Movimiento form ───────────────────────────────────────────────────────────
@@ -699,7 +756,8 @@ async function loadMovForm() {
 
   // Cargar catálogo de productos
   catalogo = await get('/api/productos');
-  _refreshCatalogoSelect();
+  document.getElementById('cat-search').value = '';
+  hideCatDrop();
 
   // Autocomplete del catálogo en los campos de texto
   document.getElementById('dl-prod').innerHTML  = catalogo.map(p => `<option value="${e(p.nombre)}">`).join('');

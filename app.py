@@ -449,6 +449,25 @@ def create_producto():
         return jsonify({'error': f'Ya existe ese SKU con ese color'}), 400
 
 
+@app.route('/api/productos/<int:pid>', methods=['PUT'])
+def update_producto(pid):
+    data   = request.json
+    nombre = (data.get('nombre') or '').strip()
+    sku    = (data.get('sku') or '').strip().upper()
+    color  = (data.get('color') or '').strip()
+    if not nombre or not sku:
+        return jsonify({'error': 'Nombre y SKU son obligatorios'}), 400
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text('UPDATE productos SET nombre=:n, sku=:s, color=:c WHERE id=:id'),
+                {'n': nombre, 's': sku, 'c': color, 'id': pid}
+            )
+        return jsonify({'ok': True})
+    except IntegrityError:
+        return jsonify({'error': 'Ya existe ese SKU con ese color'}), 400
+
+
 @app.route('/api/productos/<int:pid>', methods=['DELETE'])
 def delete_producto(pid):
     with engine.begin() as conn:
