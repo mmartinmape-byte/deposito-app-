@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Depósito | Gestión de Stock</title>
+<style>
+/* ── Reset & Variables ─────────────────────────────────────────────────────── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --blue:#2876be;--blue-dk:#1a3f6f;--blue-lt:#eaf2fb;
+  --green:#28a745;--green-lt:#e8f5ed;
+  --red:#dc3545;--red-lt:#fce8ea;
+  --orange:#d97706;--orange-lt:#fef3c7;
+  --g50:#f8f9fa;--g100:#f0f2f5;--g200:#e2e8f0;
+  --g400:#9aabb9;--g600:#6b7280;--g900:#111827;
+  --r:12px;--rlg:18px;
+  --sh:0 1px 4px rgba(0,0,0,.07);
+  --shmd:0 6px 24px rgba(0,0,0,.12)
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g100);color:var(--g900);min-height:100vh}
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
+header{
+  background:linear-gradient(135deg,var(--blue-dk),var(--blue));
+  color:#fff;height:56px;padding:0 1.5rem;
+  display:flex;align-items:center;gap:1rem;
+  position:sticky;top:0;z-index:100;
+  box-shadow:0 2px 10px rgba(0,0,0,.25)
+}
+.logo{font-size:1.05rem;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+nav{display:flex;gap:.2rem;margin-left:auto}
+nav button{
+  background:transparent;border:none;color:rgba(255,255,255,.75);
+  padding:.45rem .9rem;border-radius:8px;cursor:pointer;
+  font:500 .83rem 'Segoe UI',system-ui,sans-serif;transition:all .15s
+}
+nav button:hover{background:rgba(255,255,255,.15);color:#fff}
+nav button.active{background:rgba(255,255,255,.22);color:#fff}
+main{max-width:1100px;margin:0 auto;padding:1.5rem}
+
+/* ── Sections ──────────────────────────────────────────────────────────────── */
+.sec{display:none}.sec.show{display:block}
+
+/* ── Page heading & toolbar ────────────────────────────────────────────────── */
+.page-h{font-size:1.25rem;font-weight:700;margin-bottom:1.2rem}
+.toolbar{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:1.2rem}
+
+/* ── Stat cards ────────────────────────────────────────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:1rem;margin-bottom:1.5rem}
+.stat{background:#fff;border-radius:var(--rlg);padding:1rem 1.2rem;box-shadow:var(--sh)}
+.stat-lbl{font-size:.68rem;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--g400)}
+.stat-val{font-size:2rem;font-weight:700;color:var(--blue-dk);line-height:1.1;margin-top:.2rem}
+
+/* ── Palet cards grid ──────────────────────────────────────────────────────── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:1rem}
+.palet-card{
+  background:#fff;border-radius:var(--rlg);box-shadow:var(--sh);
+  overflow:hidden;cursor:pointer;transition:box-shadow .15s,transform .15s
+}
+.palet-card:hover{box-shadow:var(--shmd);transform:translateY(-2px)}
+.pc-head{
+  background:linear-gradient(135deg,var(--blue-dk),var(--blue));
+  color:#fff;padding:.85rem 1.1rem;
+  display:flex;align-items:center;justify-content:space-between
+}
+.pc-code{font-size:1rem;font-weight:700;letter-spacing:1px}
+.pc-badge{font-size:.68rem;background:rgba(255,255,255,.2);padding:.15rem .55rem;border-radius:20px}
+.pc-body{padding:.9rem 1.1rem}
+.pc-desc{font-size:.73rem;color:var(--g400);margin-bottom:.7rem}
+.pc-list{list-style:none}
+.pc-item{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.35rem 0;border-bottom:1px solid var(--g200);font-size:.81rem
+}
+.pc-item:last-child{border-bottom:none}
+.pc-iname{color:var(--g900);font-weight:500}
+.pc-icolor{font-size:.69rem;color:var(--g400);margin-left:.3rem}
+.pc-iqty{font-weight:600;color:var(--blue-dk)}
+.pc-empty{color:var(--g400);font-size:.79rem;text-align:center;padding:.5rem 0}
+
+/* ── Table ─────────────────────────────────────────────────────────────────── */
+.table-wrap{background:#fff;border-radius:var(--rlg);box-shadow:var(--sh);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.84rem}
+th{
+  padding:.78rem 1.1rem;text-align:left;
+  font-size:.68rem;font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  color:var(--g400);border-bottom:1px solid var(--g200)
+}
+td{padding:.72rem 1.1rem;border-bottom:1px solid var(--g200);color:var(--g600)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--g50)}
+
+/* ── Badges ────────────────────────────────────────────────────────────────── */
+.badge{display:inline-block;padding:.18rem .6rem;border-radius:20px;font-size:.7rem;font-weight:600}
+.b-ingreso{background:var(--green-lt);color:var(--green)}
+.b-egreso{background:var(--red-lt);color:var(--red)}
+.b-transferencia{background:var(--blue-lt);color:var(--blue)}
+.b-ajuste{background:var(--orange-lt);color:var(--orange)}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:.4rem;
+  padding:.55rem 1.1rem;border-radius:var(--r);
+  font-family:inherit;font-size:.83rem;font-weight:500;
+  cursor:pointer;border:none;transition:all .15s
+}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover{background:var(--blue-dk)}
+.btn-danger{background:var(--red-lt);color:var(--red)}
+.btn-danger:hover{background:#f5c6c9}
+.btn-ghost{background:var(--g100);color:var(--g600);border:1px solid var(--g200)}
+.btn-ghost:hover{background:var(--g200)}
+
+/* ── Form ──────────────────────────────────────────────────────────────────── */
+.form-card{background:#fff;border-radius:var(--rlg);padding:1.8rem;box-shadow:var(--sh);max-width:580px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.form-g{margin-bottom:1.1rem}
+label{display:block;font-size:.77rem;font-weight:600;color:var(--g600);margin-bottom:.35rem}
+input,select{
+  width:100%;padding:.65rem .85rem;
+  border:1.5px solid var(--g200);border-radius:var(--r);
+  font-size:.87rem;font-family:inherit;color:var(--g900);background:#fff;
+  outline:none;transition:border-color .15s
+}
+input:focus,select:focus{border-color:var(--blue)}
+
+/* Tipo selector */
+.type-sel{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:1.5rem}
+.type-btn{
+  padding:.7rem .4rem;border-radius:var(--r);border:2px solid var(--g200);
+  background:#fff;cursor:pointer;text-align:center;transition:all .15s;font-family:inherit
+}
+.type-icon{font-size:1.2rem;display:block;margin-bottom:.25rem}
+.type-lbl{font-size:.71rem;font-weight:600;color:var(--g600)}
+.sel-ingreso{border-color:var(--green)!important;background:var(--green-lt)!important}
+.sel-egreso{border-color:var(--red)!important;background:var(--red-lt)!important}
+.sel-transferencia{border-color:var(--blue)!important;background:var(--blue-lt)!important}
+.sel-ajuste{border-color:var(--orange)!important;background:var(--orange-lt)!important}
+
+/* Stock preview mini panel */
+.stock-preview{
+  background:var(--g50);border:1px solid var(--g200);
+  border-radius:var(--r);padding:.75rem;margin-top:.5rem
+}
+.sp-title{font-size:.68rem;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--g400);margin-bottom:.45rem}
+.sp-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.28rem 0;border-bottom:1px solid var(--g200);font-size:.79rem
+}
+.sp-row:last-child{border-bottom:none}
+.sp-name{color:var(--g900);font-weight:500}
+.sp-color{color:var(--g400);font-size:.69rem;margin-left:.3rem}
+.sp-qty{font-weight:600;color:var(--blue-dk)}
+.sp-empty{color:var(--g400);font-size:.78rem;font-style:italic}
+
+/* ── Alerts ────────────────────────────────────────────────────────────────── */
+.alert{padding:.75rem 1rem;border-radius:var(--r);font-size:.83rem;margin-bottom:1rem;display:none}
+.alert.show{display:block}
+.a-ok{background:var(--green-lt);color:var(--green)}
+.a-err{background:var(--red-lt);color:var(--red)}
+
+/* ── Modal ─────────────────────────────────────────────────────────────────── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:#fff;border-radius:var(--rlg);padding:1.8rem;max-width:450px;width:calc(100% - 2rem);box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-wide{max-width:540px}
+.modal-h{font-size:1.05rem;font-weight:700;margin-bottom:1.2rem}
+.modal-foot{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1.4rem}
+
+/* ── Empty state ───────────────────────────────────────────────────────────── */
+.empty{text-align:center;padding:3rem 2rem;color:var(--g400)}
+.empty-icon{font-size:2.5rem;margin-bottom:.75rem}
+.empty-txt{font-size:.87rem;line-height:1.65}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+@media(max-width:640px){
+  .form-row{grid-template-columns:1fr}
+  .type-sel{grid-template-columns:1fr 1fr}
+  nav button{padding:.4rem .55rem;font-size:.78rem}
+  .form-card{padding:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📦 Depósito</div>
+  <nav>
+    <button class="active" onclick="goTo('dashboard',this)">Dashboard</button>
+    <button onclick="goTo('palets',this)">Palets</button>
+    <button onclick="goTo('movimiento',this)">+ Movimiento</button>
+    <button onclick="goTo('historial',this)">Historial</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ─── DASHBOARD ─────────────────────────────────────────────────────────── -->
+<section id="sec-dashboard" class="sec show">
+  <div class="stats">
+    <div class="stat"><div class="stat-lbl">Palets</div><div class="stat-val" id="st-palets">—</div></div>
+    <div class="stat"><div class="stat-lbl">Productos</div><div class="stat-val" id="st-prods">—</div></div>
+    <div class="stat"><div class="stat-lbl">Total cajas</div><div class="stat-val" id="st-cajas">—</div></div>
+    <div class="stat"><div class="stat-lbl">Total piezas</div><div class="stat-val" id="st-pzas">—</div></div>
+  </div>
+  <div class="grid" id="dash-grid"></div>
+</section>
+
+<!-- ─── PALETS ────────────────────────────────────────────────────────────── -->
+<section id="sec-palets" class="sec">
+  <div class="toolbar">
+    <div class="page-h" style="margin:0">Palets</div>
+    <button class="btn btn-primary" onclick="openModalPalet()">+ Nuevo palet</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Descripción</th>
+          <th>Items</th>
+          <th>Total cajas</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="palets-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ─── MOVIMIENTO ────────────────────────────────────────────────────────── -->
+<section id="sec-movimiento" class="sec">
+  <div class="page-h">Registrar movimiento</div>
+
+  <div class="type-sel">
+    <button class="type-btn sel-ingreso" onclick="setTipo('ingreso',this)">
+      <span class="type-icon">⬇️</span><span class="type-lbl">Ingreso</span>
+    </button>
+    <button class="type-btn" onclick="setTipo('egreso',this)">
+      <span class="type-icon">⬆️</span><span class="type-lbl">Egreso</span>
+    </button>
+    <button class="type-btn" onclick="setTipo('transferencia',this)">
+      <span class="type-icon">↔️</span><span class="type-lbl">Transferencia</span>
+    </button>
+    <button class="type-btn" onclick="setTipo('ajuste',this)">
+      <span class="type-icon">✏️</span><span class="type-lbl">Ajuste</span>
+    </button>
+  </div>
+
+  <div class="form-card">
+    <div id="mov-alert" class="alert"></div>
+
+    <div class="form-g">
+      <label id="lbl-palet">Palet</label>
+      <select id="sel-palet" onchange="onPaletChange()"></select>
+      <div id="stock-panel" style="display:none"></div>
+    </div>
+
+    <div class="form-g" id="grp-dest" style="display:none">
+      <label>Palet destino</label>
+      <select id="sel-dest"></select>
+    </div>
+
+    <div class="form-row">
+      <div class="form-g">
+        <label>Producto</label>
+        <input type="text" id="inp-prod" placeholder="Nombre del producto" list="dl-prod" autocomplete="off"/>
+        <datalist id="dl-prod"></datalist>
+      </div>
+      <div class="form-g">
+        <label>Color / variante</label>
+        <input type="text" id="inp-color" placeholder="Ej: Blanco, Rojo..." list="dl-color" autocomplete="off"/>
+        <datalist id="dl-color"></datalist>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-g">
+        <label>Cantidad de cajas</label>
+        <input type="number" id="inp-cajas" placeholder="0" min="1"/>
+      </div>
+      <div class="form-g" id="grp-ppk">
+        <label>Piezas por caja</label>
+        <input type="number" id="inp-ppk" placeholder="0" min="0"/>
+      </div>
+    </div>
+
+    <div class="form-g">
+      <label>Observación <span style="font-weight:400;color:var(--g400)">(opcional)</span></label>
+      <input type="text" id="inp-obs" placeholder="Remito, referencia, nota..."/>
+    </div>
+
+    <button class="btn btn-primary"
+            style="width:100%;justify-content:center;padding:.85rem;font-size:.9rem"
+            onclick="submitMov()">
+      Registrar movimiento
+    </button>
+  </div>
+</section>
+
+<!-- ─── HISTORIAL ─────────────────────────────────────────────────────────── -->
+<section id="sec-historial" class="sec">
+  <div class="toolbar">
+    <div class="page-h" style="margin:0">Historial de movimientos</div>
+    <button class="btn btn-ghost" onclick="loadHistorial()">↻ Actualizar</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Tipo</th><th>Palet</th>
+          <th>Producto</th><th>Color</th><th>Cajas</th><th>Observación</th>
+        </tr>
+      </thead>
+      <tbody id="hist-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+
+<!-- ─── MODAL: Nuevo palet ────────────────────────────────────────────────── -->
+<div class="overlay" id="modal-palet">
+  <div class="modal">
+    <div class="modal-h">Nuevo palet</div>
+    <div id="mp-alert" class="alert"></div>
+    <div class="form-g">
+      <label>Código del palet</label>
+      <input type="text" id="mp-cod" placeholder="Ej: A01, B03, Z12..."
+             oninput="this.value=this.value.toUpperCase()"
+             onkeydown="if(event.key==='Enter')crearPalet()"/>
+    </div>
+    <div class="form-g">
+      <label>Descripción <span style="font-weight:400;color:var(--g400)">(opcional)</span></label>
+      <input type="text" id="mp-desc" placeholder="Ej: Sector norte, Zona fría..."
+             onkeydown="if(event.key==='Enter')crearPalet()"/>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closePaletModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="crearPalet()">Crear palet</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Detalle palet ─────────────────────────────────────────────── -->
+<div class="overlay" id="modal-det">
+  <div class="modal modal-wide">
+    <div class="modal-h" id="det-title">Palet</div>
+    <div id="det-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeDet()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let tipo  = 'ingreso';
+let palets = [];
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function goTo(id, btn) {
+  document.querySelectorAll('.sec').forEach(s => s.classList.remove('show'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('show');
+  btn.classList.add('active');
+  ({ dashboard: loadDashboard, palets: loadPaletsTable, movimiento: loadMovForm, historial: loadHistorial })[id]?.();
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function get(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+async function post(url, data) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return r.json();
+}
+async function del(url) {
+  const r = await fetch(url, { method: 'DELETE' });
+  return r.json();
+}
+
+function e(v) {
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showAlert(el, type, msg) {
+  el.className = 'alert ' + (type === 'ok' ? 'a-ok' : 'a-err') + ' show';
+  el.textContent = msg;
+  if (type === 'ok') setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+function fmtFecha(str) {
+  // SQLite datetime: "2024-01-15 10:30:00"
+  const d = new Date(str.replace(' ', 'T'));
+  return isNaN(d) ? str : d.toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const data = await get('/api/palets/full');
+  palets = data;
+
+  document.getElementById('st-palets').textContent = data.length;
+  document.getElementById('st-prods').textContent  = data.reduce((a, p) => a + p.total_items, 0);
+  document.getElementById('st-cajas').textContent  = data.reduce((a, p) => a + p.total_cajas, 0);
+  document.getElementById('st-pzas').textContent   = data.reduce((a, p) =>
+    a + p.stock.reduce((b, s) => b + s.cajas * s.piezas_por_caja, 0), 0);
+
+  const grid = document.getElementById('dash-grid');
+  if (!data.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1">
+      <div class="empty-icon">📦</div>
+      <div class="empty-txt">No hay palets creados todavía.<br>Ir a <strong>Palets</strong> para crear el primero.</div>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = data.map(p => {
+    const items = p.stock.length
+      ? p.stock.map(s => `
+          <li class="pc-item">
+            <span>
+              <span class="pc-iname">${e(s.producto)}</span>
+              <span class="pc-icolor">${e(s.color)}</span>
+            </span>
+            <span class="pc-iqty">${s.cajas} caj &middot; ${s.cajas * s.piezas_por_caja} pzs</span>
+          </li>`).join('')
+      : '<li class="pc-empty">Vacío</li>';
+
+    return `<div class="palet-card" onclick="abrirDet(${p.id})">
+      <div class="pc-head">
+        <span class="pc-code">${e(p.codigo)}</span>
+        <span class="pc-badge">${p.total_cajas} cajas</span>
+      </div>
+      <div class="pc-body">
+        ${p.descripcion ? `<div class="pc-desc">${e(p.descripcion)}</div>` : ''}
+        <ul class="pc-list">${items}</ul>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Detalle palet
+function abrirDet(id) {
+  const p = palets.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('det-title').textContent =
+    `Palet ${p.codigo}${p.descripcion ? ' — ' + p.descripcion : ''}`;
+
+  const body = document.getElementById('det-body');
+  if (!p.stock.length) {
+    body.innerHTML = '<div style="color:var(--g400);padding:1rem 0;font-size:.87rem">Este palet está vacío.</div>';
+  } else {
+    const rows = p.stock.map(s => `
+      <tr>
+        <td style="font-weight:500;color:var(--g900)">${e(s.producto)}</td>
+        <td>${e(s.color || '—')}</td>
+        <td style="font-weight:700;color:var(--blue-dk)">${s.cajas}</td>
+        <td>${s.piezas_por_caja}</td>
+        <td style="color:var(--g400)">${s.cajas * s.piezas_por_caja}</td>
+      </tr>`).join('');
+
+    body.innerHTML = `
+      <div class="table-wrap" style="box-shadow:none;border:1px solid var(--g200)">
+        <table>
+          <thead><tr>
+            <th>Producto</th><th>Color</th><th>Cajas</th><th>Pzs/caja</th><th>Total pzs</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+  document.getElementById('modal-det').classList.add('open');
+}
+
+function closeDet() { document.getElementById('modal-det').classList.remove('open'); }
+
+// ── Palets table ──────────────────────────────────────────────────────────────
+async function loadPaletsTable() {
+  const data = await get('/api/palets');
+  palets = data;
+  const tbody = document.getElementById('palets-tbody');
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--g400);padding:2rem">No hay palets. Creá el primero.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.map(p => `
+    <tr>
+      <td><strong>${e(p.codigo)}</strong></td>
+      <td>${e(p.descripcion || '—')}</td>
+      <td>${p.total_items}</td>
+      <td>${p.total_cajas}</td>
+      <td>
+        <button class="btn btn-danger" onclick="borrarPalet(${p.id},'${e(p.codigo)}')">Eliminar</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openModalPalet() {
+  document.getElementById('mp-cod').value = '';
+  document.getElementById('mp-desc').value = '';
+  document.getElementById('mp-alert').classList.remove('show');
+  document.getElementById('modal-palet').classList.add('open');
+  setTimeout(() => document.getElementById('mp-cod').focus(), 60);
+}
+
+function closePaletModal() { document.getElementById('modal-palet').classList.remove('open'); }
+
+async function crearPalet() {
+  const codigo = document.getElementById('mp-cod').value.trim().toUpperCase();
+  const desc   = document.getElementById('mp-desc').value.trim();
+  const alert  = document.getElementById('mp-alert');
+  if (!codigo) { showAlert(alert, 'err', 'Escribí el código del palet.'); return; }
+  const res = await post('/api/palets', { codigo, descripcion: desc });
+  if (res.error) { showAlert(alert, 'err', res.error); return; }
+  closePaletModal();
+  loadPaletsTable();
+}
+
+async function borrarPalet(id, codigo) {
+  if (!confirm(`¿Eliminar el palet ${codigo}?\nEsto borrará también todo su stock actual.`)) return;
+  await del('/api/palets/' + id);
+  loadPaletsTable();
+}
+
+// ── Movimiento form ───────────────────────────────────────────────────────────
+async function loadMovForm() {
+  const data = await get('/api/palets');
+  palets = data;
+
+  const opts = data.length
+    ? data.map(p => `<option value="${p.id}">${e(p.codigo)}${p.descripcion ? ' — ' + e(p.descripcion) : ''}</option>`).join('')
+    : '<option value="">Sin palets — creá uno primero</option>';
+
+  document.getElementById('sel-palet').innerHTML = opts;
+  document.getElementById('sel-dest').innerHTML  = opts;
+
+  // Autocomplete global desde historial
+  try {
+    const movs  = await get('/api/movimientos');
+    const prods = [...new Set(movs.map(m => m.producto).filter(Boolean))];
+    const cols  = [...new Set(movs.map(m => m.color).filter(Boolean))];
+    document.getElementById('dl-prod').innerHTML  = prods.map(p => `<option value="${e(p)}">`).join('');
+    document.getElementById('dl-color').innerHTML = cols.map(c => `<option value="${e(c)}">`).join('');
+  } catch {}
+
+  // Restaurar tipo seleccionado visualmente
+  document.querySelectorAll('.type-btn').forEach(b => b.className = 'type-btn');
+  const btns = { ingreso:0, egreso:1, transferencia:2, ajuste:3 };
+  document.querySelectorAll('.type-btn')[btns[tipo]]?.classList.add('sel-' + tipo);
+
+  document.getElementById('grp-dest').style.display = tipo === 'transferencia' ? '' : 'none';
+  document.getElementById('lbl-palet').textContent   = tipo === 'transferencia' ? 'Palet origen' : 'Palet';
+  document.getElementById('grp-ppk').style.display  = tipo === 'egreso' ? 'none' : '';
+
+  onPaletChange();
+}
+
+function setTipo(t, btn) {
+  tipo = t;
+  document.querySelectorAll('.type-btn').forEach(b => b.className = 'type-btn');
+  btn.classList.add('sel-' + t);
+  document.getElementById('grp-dest').style.display = t === 'transferencia' ? '' : 'none';
+  document.getElementById('lbl-palet').textContent   = t === 'transferencia' ? 'Palet origen' : 'Palet';
+  document.getElementById('grp-ppk').style.display  = t === 'egreso' ? 'none' : '';
+  onPaletChange();
+}
+
+async function onPaletChange() {
+  const pid   = parseInt(document.getElementById('sel-palet').value);
+  const panel = document.getElementById('stock-panel');
+  if (!pid || tipo === 'ingreso') { panel.style.display = 'none'; return; }
+
+  try {
+    const stock = await get('/api/palets/' + pid + '/stock');
+    if (!stock.length) { panel.style.display = 'none'; return; }
+
+    const lbl = tipo === 'egreso'
+      ? 'Stock disponible para sacar:'
+      : 'Stock actual del palet origen:';
+
+    panel.innerHTML = `<div class="stock-preview">
+      <div class="sp-title">${lbl}</div>
+      ${stock.map(s => `
+        <div class="sp-row">
+          <span>
+            <span class="sp-name">${e(s.producto)}</span>
+            <span class="sp-color">${e(s.color)}</span>
+          </span>
+          <span class="sp-qty">${s.cajas} caj</span>
+        </div>`).join('')}
+    </div>`;
+    panel.style.display = '';
+
+    // Actualizar autocomplete con este palet
+    document.getElementById('dl-prod').innerHTML  = stock.map(s => `<option value="${e(s.producto)}">`).join('');
+    document.getElementById('dl-color').innerHTML = stock.map(s => `<option value="${e(s.color)}">`).join('');
+  } catch {
+    panel.style.display = 'none';
+  }
+}
+
+async function submitMov() {
+  const alert = document.getElementById('mov-alert');
+  const pid   = parseInt(document.getElementById('sel-palet').value);
+  const prod  = document.getElementById('inp-prod').value.trim();
+  const color = document.getElementById('inp-color').value.trim();
+  const cajas = parseInt(document.getElementById('inp-cajas').value);
+  const ppk   = parseInt(document.getElementById('inp-ppk').value) || 0;
+  const obs   = document.getElementById('inp-obs').value.trim();
+
+  if (!pid || !prod || !cajas || cajas < 1) {
+    showAlert(alert, 'err', 'Completá palet, producto y cantidad de cajas.');
+    return;
+  }
+
+  const body = { tipo, palet_id: pid, producto: prod, color, cajas, piezas_por_caja: ppk, observacion: obs };
+
+  if (tipo === 'transferencia') {
+    body.palet_destino_id = parseInt(document.getElementById('sel-dest').value);
+    if (body.palet_destino_id === pid) {
+      showAlert(alert, 'err', 'El palet origen y destino no pueden ser el mismo.');
+      return;
+    }
+  }
+
+  const res = await post('/api/movimientos', body);
+  if (res.error) { showAlert(alert, 'err', res.error); return; }
+
+  showAlert(alert, 'ok', '✓ Movimiento registrado correctamente.');
+  ['inp-prod','inp-color','inp-cajas','inp-ppk','inp-obs'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  onPaletChange();
+}
+
+// ── Historial ─────────────────────────────────────────────────────────────────
+async function loadHistorial() {
+  const data  = await get('/api/movimientos');
+  const tbody = document.getElementById('hist-tbody');
+
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--g400);padding:2rem">No hay movimientos registrados todavía.</td></tr>`;
+    return;
+  }
+
+  const lbl = { ingreso:'Ingreso', egreso:'Egreso', transferencia:'Transferencia', ajuste:'Ajuste' };
+
+  tbody.innerHTML = data.map(m => {
+    const palet = m.tipo === 'transferencia'
+      ? `${e(m.palet_codigo)} → ${e(m.palet_destino_codigo)}`
+      : e(m.palet_codigo || '—');
+
+    return `<tr>
+      <td style="color:var(--g400);white-space:nowrap;font-size:.79rem">${fmtFecha(m.fecha)}</td>
+      <td><span class="badge b-${m.tipo}">${lbl[m.tipo]}</span></td>
+      <td><strong>${palet}</strong></td>
+      <td>${e(m.producto)}</td>
+      <td>${e(m.color || '—')}</td>
+      <td style="font-weight:600">${m.cajas}</td>
+      <td style="color:var(--g400);font-size:.79rem">${e(m.observacion || '—')}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadDashboard();
+</script>
+</body>
+</html>
