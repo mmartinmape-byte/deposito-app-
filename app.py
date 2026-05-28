@@ -171,6 +171,12 @@ def create_palet():
 @app.route('/api/palets/<int:pid>', methods=['DELETE'])
 def delete_palet(pid):
     with engine.begin() as conn:
+        # Desvincular del historial sin perder los registros
+        conn.execute(text('UPDATE movimientos SET palet_id=NULL WHERE palet_id=:pid'), {'pid': pid})
+        conn.execute(text('UPDATE movimientos SET palet_destino_id=NULL WHERE palet_destino_id=:pid'), {'pid': pid})
+        # Borrar stock del palet
+        conn.execute(text('DELETE FROM stock WHERE palet_id=:pid'), {'pid': pid})
+        # Borrar el palet
         conn.execute(text('DELETE FROM palets WHERE id=:pid'), {'pid': pid})
     return jsonify({'ok': True})
 
