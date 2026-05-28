@@ -70,6 +70,13 @@ def init_db():
                 observacion      TEXT DEFAULT '',
                 fecha            TEXT
             )""",
+            """CREATE TABLE IF NOT EXISTS productos (
+                id     SERIAL PRIMARY KEY,
+                nombre TEXT NOT NULL,
+                sku    TEXT NOT NULL,
+                color  TEXT NOT NULL DEFAULT '',
+                UNIQUE(sku, color)
+            )""",
         ]
     else:
         stmts = [
@@ -98,6 +105,13 @@ def init_db():
                 cajas            INTEGER NOT NULL,
                 observacion      TEXT DEFAULT '',
                 fecha            TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS productos (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                sku    TEXT NOT NULL COLLATE NOCASE,
+                color  TEXT NOT NULL DEFAULT '',
+                UNIQUE(sku, color)
             )""",
         ]
 
@@ -326,6 +340,43 @@ def _set(conn, palet_id, producto, color, ppk, cajas):
             text('INSERT INTO stock (palet_id,producto,color,cajas,piezas_por_caja) VALUES (:pid,:prod,:col,:c,:ppk)'),
             {'pid': palet_id, 'prod': producto, 'col': color, 'c': cajas, 'ppk': ppk}
         )
+
+
+# ── Catálogo de productos ─────────────────────────────────────────────────────
+
+@app.route('/api/productos')
+def get_productos():
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text('SELECT * FROM productos ORDER BY nombre, color')
+        ).fetchall()
+    return jsonify([_row(r) for r in rows])
+
+
+@app.route('/api/productos', methods=['POST'])
+def create_producto():
+    data   = request.json
+    nombre = (data.get('nombre') or '').strip()
+    sku    = (data.get('sku') or '').strip().upper()
+    color  = (data.get('color') or '').strip()
+    if not nombre or not sku:
+        return jsonify({'error': 'Nombre y SKU son obligatorios'}), 400
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text('INSERT INTO productos (nombre, sku, color) VALUES (:n, :s, :c)'),
+                {'n': nombre, 's': sku, 'c': color}
+            )
+        return jsonify({'ok': True})
+    except IntegrityError:
+        return jsonify({'error': f'Ya existe ese SKU con ese color'}), 400
+
+
+@app.route('/api/productos/<int:pid>', methods=['DELETE'])
+def delete_producto(pid):
+    with engine.begin() as conn:
+        conn.execute(text('DELETE FROM productos WHERE id=:pid'), {'pid': pid})
+    return jsonify({'ok': True})
 
 
 @app.route('/api/reset', methods=['DELETE'])

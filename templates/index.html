@@ -189,6 +189,7 @@ input:focus,select:focus{border-color:var(--blue)}
   <nav>
     <button class="active" onclick="goTo('dashboard',this)">Dashboard</button>
     <button onclick="goTo('palets',this)">Palets</button>
+    <button onclick="goTo('catalogo',this)">Catálogo</button>
     <button onclick="goTo('movimiento',this)">+ Movimiento</button>
     <button onclick="goTo('historial',this)">Historial</button>
   </nav>
@@ -230,6 +231,22 @@ input:focus,select:focus{border-color:var(--blue)}
   </div>
 </section>
 
+<!-- ─── CATÁLOGO ──────────────────────────────────────────────────────────── -->
+<section id="sec-catalogo" class="sec">
+  <div class="toolbar">
+    <div class="page-h" style="margin:0">Catálogo de productos</div>
+    <button class="btn btn-primary" onclick="openModalProducto()">+ Nuevo producto</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>SKU</th><th>Nombre</th><th>Color</th><th></th></tr>
+      </thead>
+      <tbody id="catalogo-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
 <!-- ─── MOVIMIENTO ────────────────────────────────────────────────────────── -->
 <section id="sec-movimiento" class="sec">
   <div class="page-h">Registrar movimiento</div>
@@ -251,6 +268,13 @@ input:focus,select:focus{border-color:var(--blue)}
 
   <div class="form-card">
     <div id="mov-alert" class="alert"></div>
+
+    <div class="form-g">
+      <label>Seleccionar del catálogo <span style="font-weight:400;color:var(--g400)">(opcional — auto-completa los campos)</span></label>
+      <select id="sel-catalogo" onchange="onCatalogoSelect()">
+        <option value="">— Buscar en catálogo —</option>
+      </select>
+    </div>
 
     <div class="form-g">
       <label id="lbl-palet">Palet</label>
@@ -321,6 +345,34 @@ input:focus,select:focus{border-color:var(--blue)}
 
 </main>
 
+<!-- ─── MODAL: Nuevo producto ─────────────────────────────────────────────── -->
+<div class="overlay" id="modal-producto">
+  <div class="modal">
+    <div class="modal-h">Nuevo producto</div>
+    <div id="mprod-alert" class="alert"></div>
+    <div class="form-g">
+      <label>SKU</label>
+      <input type="text" id="mprod-sku" placeholder="Ej: SKU001, MOD-A..."
+             oninput="this.value=this.value.toUpperCase()"
+             onkeydown="if(event.key==='Enter')crearProducto()"/>
+    </div>
+    <div class="form-g">
+      <label>Nombre del producto</label>
+      <input type="text" id="mprod-nombre" placeholder="Ej: Silla Ejecutiva, Mesa Ratona..."
+             onkeydown="if(event.key==='Enter')crearProducto()"/>
+    </div>
+    <div class="form-g">
+      <label>Color</label>
+      <input type="text" id="mprod-color" placeholder="Ej: Blanco, Negro, Natural..."
+             onkeydown="if(event.key==='Enter')crearProducto()"/>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModalProducto()">Cancelar</button>
+      <button class="btn btn-primary" onclick="crearProducto()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ─── MODAL: Nuevo palet ────────────────────────────────────────────────── -->
 <div class="overlay" id="modal-palet">
   <div class="modal">
@@ -361,6 +413,7 @@ input:focus,select:focus{border-color:var(--blue)}
 // ── State ─────────────────────────────────────────────────────────────────────
 let tipo  = 'ingreso';
 let palets = [];
+let catalogo = [];
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function goTo(id, btn) {
@@ -368,7 +421,7 @@ function goTo(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('sec-' + id).classList.add('show');
   btn.classList.add('active');
-  ({ dashboard: loadDashboard, palets: loadPaletsTable, movimiento: loadMovForm, historial: loadHistorial })[id]?.();
+  ({ dashboard: loadDashboard, palets: loadPaletsTable, catalogo: loadCatalogoSection, movimiento: loadMovForm, historial: loadHistorial })[id]?.();
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -536,6 +589,74 @@ async function borrarPalet(id, codigo) {
   loadPaletsTable();
 }
 
+// ── Catálogo ──────────────────────────────────────────────────────────────────
+async function loadCatalogoSection() {
+  catalogo = await get('/api/productos');
+  const tbody = document.getElementById('catalogo-tbody');
+  if (!catalogo.length) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--g400);padding:2rem">No hay productos en el catálogo. Agregá el primero.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = catalogo.map(p => `
+    <tr>
+      <td><strong>${e(p.sku)}</strong></td>
+      <td>${e(p.nombre)}</td>
+      <td>${e(p.color || '—')}</td>
+      <td><button class="btn btn-danger" onclick="borrarProducto(${p.id})">Eliminar</button></td>
+    </tr>`).join('');
+}
+
+function openModalProducto() {
+  ['mprod-sku','mprod-nombre','mprod-color'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('mprod-alert').classList.remove('show');
+  document.getElementById('modal-producto').classList.add('open');
+  setTimeout(() => document.getElementById('mprod-sku').focus(), 60);
+}
+
+function closeModalProducto() {
+  document.getElementById('modal-producto').classList.remove('open');
+}
+
+async function crearProducto() {
+  const sku    = document.getElementById('mprod-sku').value.trim().toUpperCase();
+  const nombre = document.getElementById('mprod-nombre').value.trim();
+  const color  = document.getElementById('mprod-color').value.trim();
+  const alert  = document.getElementById('mprod-alert');
+  if (!sku || !nombre) { showAlert(alert, 'err', 'SKU y Nombre son obligatorios.'); return; }
+  const res = await post('/api/productos', { sku, nombre, color });
+  if (res.error) { showAlert(alert, 'err', res.error); return; }
+  closeModalProducto();
+  loadCatalogoSection();
+}
+
+async function borrarProducto(id) {
+  if (!confirm('¿Eliminar este producto del catálogo?')) return;
+  await del('/api/productos/' + id);
+  loadCatalogoSection();
+}
+
+function _refreshCatalogoSelect() {
+  const sel = document.getElementById('sel-catalogo');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Buscar en catálogo —</option>';
+  catalogo.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${e(p.sku)} — ${e(p.nombre)}${p.color ? ' — ' + e(p.color) : ''}`;
+    sel.appendChild(opt);
+  });
+}
+
+function onCatalogoSelect() {
+  const id = parseInt(document.getElementById('sel-catalogo').value);
+  if (!id) return;
+  const p = catalogo.find(x => x.id === id);
+  if (p) {
+    document.getElementById('inp-prod').value  = p.nombre;
+    document.getElementById('inp-color').value = p.color;
+  }
+}
+
 // ── Movimiento form ───────────────────────────────────────────────────────────
 async function loadMovForm() {
   const data = await get('/api/palets');
@@ -548,14 +669,13 @@ async function loadMovForm() {
   document.getElementById('sel-palet').innerHTML = opts;
   document.getElementById('sel-dest').innerHTML  = opts;
 
-  // Autocomplete global desde historial
-  try {
-    const movs  = await get('/api/movimientos');
-    const prods = [...new Set(movs.map(m => m.producto).filter(Boolean))];
-    const cols  = [...new Set(movs.map(m => m.color).filter(Boolean))];
-    document.getElementById('dl-prod').innerHTML  = prods.map(p => `<option value="${e(p)}">`).join('');
-    document.getElementById('dl-color').innerHTML = cols.map(c => `<option value="${e(c)}">`).join('');
-  } catch {}
+  // Cargar catálogo de productos
+  catalogo = await get('/api/productos');
+  _refreshCatalogoSelect();
+
+  // Autocomplete del catálogo en los campos de texto
+  document.getElementById('dl-prod').innerHTML  = catalogo.map(p => `<option value="${e(p.nombre)}">`).join('');
+  document.getElementById('dl-color').innerHTML = [...new Set(catalogo.map(p => p.color).filter(Boolean))].map(c => `<option value="${e(c)}">`).join('');
 
   // Restaurar tipo seleccionado visualmente
   document.querySelectorAll('.type-btn').forEach(b => b.className = 'type-btn');
