@@ -192,6 +192,8 @@ def migrate_db():
 init_db()
 migrate_db()
 
+print(f'\n  Base de datos: {"PostgreSQL ✓" if IS_PG else "SQLite (DATOS SE PIERDEN AL REDEPLOYAR)"}\n')
+
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
 
