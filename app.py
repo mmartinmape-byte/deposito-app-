@@ -322,6 +322,15 @@ def _set(conn, palet_id, producto, color, ppk, cajas):
         )
 
 
+@app.route('/api/reset', methods=['DELETE'])
+def reset_todo():
+    with engine.begin() as conn:
+        conn.execute(text('DELETE FROM movimientos'))
+        conn.execute(text('DELETE FROM stock'))
+        conn.execute(text('DELETE FROM palets'))
+    return jsonify({'ok': True})
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print(f'\n  Depósito corriendo en: http://localhost:{port}\n')

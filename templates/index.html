@@ -212,6 +212,7 @@ input:focus,select:focus{border-color:var(--blue)}
   <div class="toolbar">
     <div class="page-h" style="margin:0">Palets</div>
     <button class="btn btn-primary" onclick="openModalPalet()">+ Nuevo palet</button>
+    <button class="btn btn-danger" style="margin-left:auto" onclick="resetTodo()">🗑 Borrar todo</button>
   </div>
   <div class="table-wrap">
     <table>
@@ -673,6 +674,15 @@ async function loadHistorial() {
       <td style="color:var(--g400);font-size:.79rem">${e(m.observacion || '—')}</td>
     </tr>`;
   }).join('');
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+async function resetTodo() {
+  if (!confirm('¿Borrar TODO el depósito?\nSe eliminarán todos los palets, stock y movimientos.\n\nEsta acción no se puede deshacer.')) return;
+  if (!confirm('Segunda confirmación: ¿estás seguro que querés borrar todo?')) return;
+  await del('/api/reset');
+  loadPaletsTable();
+  alert('Depósito reseteado. Todo el stock fue eliminado.');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
