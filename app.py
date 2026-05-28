@@ -379,6 +379,30 @@ def delete_producto(pid):
     return jsonify({'ok': True})
 
 
+@app.route('/api/buscar')
+def buscar():
+    q = request.args.get('q', '').strip().lower()
+    if not q:
+        return jsonify([])
+    like = f'%{q}%'
+    with engine.connect() as conn:
+        rows = conn.execute(text('''
+            SELECT s.producto, s.color, s.cajas, s.piezas_por_caja,
+                   p.codigo  AS palet_codigo,
+                   p.descripcion AS palet_desc,
+                   pr.sku
+            FROM stock s
+            JOIN palets p ON s.palet_id = p.id
+            LEFT JOIN productos pr ON LOWER(pr.nombre) = LOWER(s.producto)
+                                  AND LOWER(pr.color)  = LOWER(s.color)
+            WHERE LOWER(s.producto) LIKE :q
+               OR LOWER(s.color)    LIKE :q
+               OR LOWER(COALESCE(pr.sku, '')) LIKE :q
+            ORDER BY s.producto, s.color, p.codigo
+        '''), {'q': like}).fetchall()
+    return jsonify([_row(r) for r in rows])
+
+
 @app.route('/api/reset', methods=['DELETE'])
 def reset_todo():
     with engine.begin() as conn:

@@ -32,9 +32,11 @@ header{
 nav{display:flex;gap:.2rem;margin-left:auto}
 nav button{
   background:transparent;border:none;color:rgba(255,255,255,.75);
-  padding:.45rem .9rem;border-radius:8px;cursor:pointer;
-  font:500 .83rem 'Segoe UI',system-ui,sans-serif;transition:all .15s
+  padding:.4rem .7rem;border-radius:8px;cursor:pointer;
+  font:500 .78rem 'Segoe UI',system-ui,sans-serif;transition:all .15s;
+  white-space:nowrap
 }
+nav{flex-wrap:wrap;row-gap:.2rem}
 nav button:hover{background:rgba(255,255,255,.15);color:#fff}
 nav button.active{background:rgba(255,255,255,.22);color:#fff}
 main{max-width:1100px;margin:0 auto;padding:1.5rem}
@@ -187,10 +189,11 @@ input:focus,select:focus{border-color:var(--blue)}
 <header>
   <div class="logo">📦 Depósito</div>
   <nav>
-    <button class="active" onclick="goTo('dashboard',this)">Dashboard</button>
+    <button class="active" onclick="goTo('dashboard',this)">🏠</button>
     <button onclick="goTo('palets',this)">Palets</button>
     <button onclick="goTo('catalogo',this)">Catálogo</button>
     <button onclick="goTo('movimiento',this)">+ Movimiento</button>
+    <button onclick="goTo('buscar',this)">🔍 Buscar</button>
     <button onclick="goTo('historial',this)">Historial</button>
   </nav>
 </header>
@@ -324,6 +327,21 @@ input:focus,select:focus{border-color:var(--blue)}
   </div>
 </section>
 
+<!-- ─── BUSCAR ────────────────────────────────────────────────────────────── -->
+<section id="sec-buscar" class="sec">
+  <div class="page-h">Buscar producto</div>
+  <div class="form-card" style="max-width:100%;margin-bottom:1.2rem">
+    <div style="display:flex;gap:.75rem;align-items:center">
+      <input type="text" id="buscar-input"
+             placeholder="Escribí nombre, color o SKU..."
+             oninput="onBuscar()"
+             style="flex:1;font-size:1rem;padding:.75rem 1rem"/>
+      <button class="btn btn-ghost" onclick="document.getElementById('buscar-input').value='';onBuscar()">✕</button>
+    </div>
+  </div>
+  <div id="buscar-resultados"></div>
+</section>
+
 <!-- ─── HISTORIAL ─────────────────────────────────────────────────────────── -->
 <section id="sec-historial" class="sec">
   <div class="toolbar">
@@ -421,7 +439,7 @@ function goTo(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('sec-' + id).classList.add('show');
   btn.classList.add('active');
-  ({ dashboard: loadDashboard, palets: loadPaletsTable, catalogo: loadCatalogoSection, movimiento: loadMovForm, historial: loadHistorial })[id]?.();
+  ({ dashboard: loadDashboard, palets: loadPaletsTable, catalogo: loadCatalogoSection, movimiento: loadMovForm, buscar: () => document.getElementById('buscar-input').focus(), historial: loadHistorial })[id]?.();
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -794,6 +812,53 @@ async function loadHistorial() {
       <td style="color:var(--g400);font-size:.79rem">${e(m.observacion || '—')}</td>
     </tr>`;
   }).join('');
+}
+
+// ── Buscar ───────────────────────────────────────────────────────────────────
+let _buscarTimer = null;
+
+function onBuscar() {
+  clearTimeout(_buscarTimer);
+  _buscarTimer = setTimeout(ejecutarBusqueda, 300);
+}
+
+async function ejecutarBusqueda() {
+  const q   = document.getElementById('buscar-input').value.trim();
+  const div = document.getElementById('buscar-resultados');
+
+  if (!q) {
+    div.innerHTML = '';
+    return;
+  }
+
+  const data = await get('/api/buscar?q=' + encodeURIComponent(q));
+
+  if (!data.length) {
+    div.innerHTML = `<div class="empty">
+      <div class="empty-icon">🔍</div>
+      <div class="empty-txt">No se encontró "<strong>${e(q)}</strong>" en ningún palet.</div>
+    </div>`;
+    return;
+  }
+
+  const rows = data.map(r => `
+    <tr>
+      <td><strong style="color:var(--blue-dk);font-size:1rem">${e(r.palet_codigo)}</strong>
+          ${r.palet_desc ? `<span style="color:var(--g400);font-size:.75rem;margin-left:.4rem">${e(r.palet_desc)}</span>` : ''}
+      </td>
+      <td>${r.sku ? `<span class="badge b-transferencia" style="margin-right:.4rem">${e(r.sku)}</span>` : ''}${e(r.producto)}</td>
+      <td>${e(r.color || '—')}</td>
+      <td style="font-weight:700;color:var(--blue-dk)">${r.cajas}</td>
+      <td style="color:var(--g400)">${r.cajas * r.piezas_por_caja}</td>
+    </tr>`).join('');
+
+  div.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Palet</th><th>Producto</th><th>Color</th><th>Cajas</th><th>Total piezas</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
