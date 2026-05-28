@@ -120,7 +120,77 @@ def init_db():
             conn.execute(text(stmt))
 
 
+def migrate_db():
+    """Actualiza la base de datos existente para incluir piezas_por_caja en el índice único de stock."""
+    try:
+        if IS_PG:
+            with engine.connect() as conn:
+                # Verificar si el constraint ya incluye piezas_por_caja
+                already = conn.execute(text("""
+                    SELECT 1
+                    FROM information_schema.constraint_column_usage
+                    WHERE table_name = 'stock'
+                      AND column_name = 'piezas_por_caja'
+                      AND constraint_name IN (
+                          SELECT constraint_name
+                          FROM information_schema.table_constraints
+                          WHERE table_name = 'stock' AND constraint_type = 'UNIQUE'
+                      )
+                """)).fetchone()
+
+            if not already:
+                with engine.begin() as conn:
+                    # Eliminar constraint viejo
+                    old = conn.execute(text("""
+                        SELECT constraint_name
+                        FROM information_schema.table_constraints
+                        WHERE table_name = 'stock' AND constraint_type = 'UNIQUE'
+                        LIMIT 1
+                    """)).fetchone()
+                    if old:
+                        conn.execute(text(f'ALTER TABLE stock DROP CONSTRAINT "{old[0]}"'))
+                    # Agregar constraint nuevo
+                    conn.execute(text(
+                        'ALTER TABLE stock ADD CONSTRAINT stock_unique_ppk '
+                        'UNIQUE (palet_id, producto, color, piezas_por_caja)'
+                    ))
+                    print('  Migración aplicada: nuevo índice en stock.')
+        else:
+            # SQLite: verificar si la constraint ya incluye piezas_por_caja
+            with engine.connect() as conn:
+                row = conn.execute(text(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='stock'"
+                )).fetchone()
+            if row:
+                sql = row[0]
+                unique_part = sql[sql.upper().find('UNIQUE'):]
+                if 'piezas_por_caja' not in unique_part.lower():
+                    # Recrear la tabla con el constraint correcto
+                    with engine.begin() as conn:
+                        conn.execute(text('ALTER TABLE stock RENAME TO _stock_old'))
+                        conn.execute(text('''
+                            CREATE TABLE stock (
+                                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                                palet_id        INTEGER NOT NULL,
+                                producto        TEXT NOT NULL,
+                                color           TEXT NOT NULL DEFAULT \'\',
+                                cajas           INTEGER NOT NULL DEFAULT 0,
+                                piezas_por_caja INTEGER NOT NULL DEFAULT 0,
+                                FOREIGN KEY(palet_id) REFERENCES palets(id) ON DELETE CASCADE,
+                                UNIQUE(palet_id, producto, color, piezas_por_caja)
+                            )
+                        '''))
+                        conn.execute(text(
+                            'INSERT INTO stock SELECT id,palet_id,producto,color,cajas,piezas_por_caja FROM _stock_old'
+                        ))
+                        conn.execute(text('DROP TABLE _stock_old'))
+                    print('  Migración SQLite aplicada: nuevo índice en stock.')
+    except Exception as ex:
+        print(f'  Aviso migración: {ex}')
+
+
 init_db()
+migrate_db()
 
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
@@ -241,7 +311,7 @@ def crear_movimiento():
                     'obs': d.get('observacion', ''), 'f': _now()})
 
             elif tipo == 'egreso':
-                ok = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'])
+                ok = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], d.get('piezas_por_caja', 0))
                 if not ok:
                     raise ValueError('Stock insuficiente para ese movimiento')
                 conn.execute(text(
@@ -260,7 +330,7 @@ def crear_movimiento():
                     {'pid': d['palet_id'], 'prod': d['producto'], 'col': d['color']}
                 ).fetchone()
                 ppk = row.piezas_por_caja if row else 0
-                ok  = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'])
+                ok  = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], ppk)
                 if not ok:
                     raise ValueError('Stock insuficiente en el palet origen')
                 _add(conn, dest, d['producto'], d['color'], ppk, d['cajas'])
@@ -291,14 +361,15 @@ def crear_movimiento():
 # ── Helpers de stock ──────────────────────────────────────────────────────────
 
 def _add(conn, palet_id, producto, color, ppk, cajas):
+    # Busca por producto + color + piezas_por_caja: cada combinación es una entrada independiente
     row = conn.execute(
-        text('SELECT id FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col'),
-        {'pid': palet_id, 'prod': producto, 'col': color}
+        text('SELECT id FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col AND piezas_por_caja=:ppk'),
+        {'pid': palet_id, 'prod': producto, 'col': color, 'ppk': ppk}
     ).fetchone()
     if row:
         conn.execute(
-            text('UPDATE stock SET cajas=cajas+:c, piezas_por_caja=:ppk WHERE id=:id'),
-            {'c': cajas, 'ppk': ppk, 'id': row.id}
+            text('UPDATE stock SET cajas=cajas+:c WHERE id=:id'),
+            {'c': cajas, 'id': row.id}
         )
     else:
         conn.execute(
@@ -307,11 +378,15 @@ def _add(conn, palet_id, producto, color, ppk, cajas):
         )
 
 
-def _sub(conn, palet_id, producto, color, cajas):
-    row = conn.execute(
-        text('SELECT id, cajas FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col'),
-        {'pid': palet_id, 'prod': producto, 'col': color}
-    ).fetchone()
+def _sub(conn, palet_id, producto, color, cajas, ppk=0):
+    # Si se especifica ppk busca exacto; si no, toma cualquier entrada del producto
+    if ppk:
+        q = 'SELECT id, cajas FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col AND piezas_por_caja=:ppk'
+        params = {'pid': palet_id, 'prod': producto, 'col': color, 'ppk': ppk}
+    else:
+        q = 'SELECT id, cajas FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col ORDER BY id LIMIT 1'
+        params = {'pid': palet_id, 'prod': producto, 'col': color}
+    row = conn.execute(text(q), params).fetchone()
     if not row or row.cajas < cajas:
         return False
     nuevas = row.cajas - cajas
@@ -324,16 +399,16 @@ def _sub(conn, palet_id, producto, color, cajas):
 
 def _set(conn, palet_id, producto, color, ppk, cajas):
     row = conn.execute(
-        text('SELECT id FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col'),
-        {'pid': palet_id, 'prod': producto, 'col': color}
+        text('SELECT id FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col AND piezas_por_caja=:ppk'),
+        {'pid': palet_id, 'prod': producto, 'col': color, 'ppk': ppk}
     ).fetchone()
     if cajas == 0:
         if row:
             conn.execute(text('DELETE FROM stock WHERE id=:id'), {'id': row.id})
     elif row:
         conn.execute(
-            text('UPDATE stock SET cajas=:c, piezas_por_caja=:ppk WHERE id=:id'),
-            {'c': cajas, 'ppk': ppk, 'id': row.id}
+            text('UPDATE stock SET cajas=:c WHERE id=:id'),
+            {'c': cajas, 'id': row.id}
         )
     else:
         conn.execute(

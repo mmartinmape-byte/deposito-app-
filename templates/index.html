@@ -665,6 +665,12 @@ function _refreshCatalogoSelect() {
   });
 }
 
+function fillFromStock(producto, color, ppk) {
+  document.getElementById('inp-prod').value  = producto;
+  document.getElementById('inp-color').value = color;
+  document.getElementById('inp-ppk').value   = ppk;
+}
+
 function onCatalogoSelect() {
   const id = parseInt(document.getElementById('sel-catalogo').value);
   if (!id) return;
@@ -713,7 +719,7 @@ function setTipo(t, btn) {
   btn.classList.add('sel-' + t);
   document.getElementById('grp-dest').style.display = t === 'transferencia' ? '' : 'none';
   document.getElementById('lbl-palet').textContent   = t === 'transferencia' ? 'Palet origen' : 'Palet';
-  document.getElementById('grp-ppk').style.display  = t === 'egreso' ? 'none' : '';
+  document.getElementById('grp-ppk').style.display  = '';
   onPaletChange();
 }
 
@@ -731,12 +737,16 @@ async function onPaletChange() {
       : 'Stock actual del palet origen:';
 
     panel.innerHTML = `<div class="stock-preview">
-      <div class="sp-title">${lbl}</div>
+      <div class="sp-title">${lbl} — <small style="font-weight:400">hacé clic en una fila para autocompletar</small></div>
       ${stock.map(s => `
-        <div class="sp-row">
+        <div class="sp-row" style="cursor:pointer"
+             onclick="fillFromStock('${e(s.producto)}','${e(s.color)}',${s.piezas_por_caja})"
+             onmouseover="this.style.background='var(--blue-lt)'"
+             onmouseout="this.style.background=''">
           <span>
             <span class="sp-name">${e(s.producto)}</span>
             <span class="sp-color">${e(s.color)}</span>
+            <span class="sp-color">&bull; ${s.piezas_por_caja} pzs/caja</span>
           </span>
           <span class="sp-qty">${s.cajas} caj</span>
         </div>`).join('')}
