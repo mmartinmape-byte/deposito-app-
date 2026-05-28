@@ -75,6 +75,7 @@ def init_db():
                 nombre TEXT NOT NULL,
                 sku    TEXT NOT NULL,
                 color  TEXT NOT NULL DEFAULT '',
+                costo  NUMERIC NOT NULL DEFAULT 0,
                 UNIQUE(sku, color)
             )""",
         ]
@@ -111,6 +112,7 @@ def init_db():
                 nombre TEXT NOT NULL,
                 sku    TEXT NOT NULL COLLATE NOCASE,
                 color  TEXT NOT NULL DEFAULT '',
+                costo  REAL NOT NULL DEFAULT 0,
                 UNIQUE(sku, color)
             )""",
         ]
@@ -187,6 +189,23 @@ def migrate_db():
                     print('  Migración SQLite aplicada: nuevo índice en stock.')
     except Exception as ex:
         print(f'  Aviso migración: {ex}')
+
+    # Migración: columna costo en productos
+    try:
+        if IS_PG:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    'ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo NUMERIC NOT NULL DEFAULT 0'
+                ))
+        else:
+            with engine.connect() as conn:
+                cols = [r[1] for r in conn.execute(text('PRAGMA table_info(productos)')).fetchall()]
+            if 'costo' not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE productos ADD COLUMN costo REAL NOT NULL DEFAULT 0'))
+                print('  Migración aplicada: columna costo en productos.')
+    except Exception as ex:
+        print(f'  Aviso migración costo: {ex}')
 
 
 init_db()
@@ -473,6 +492,43 @@ def delete_producto(pid):
     with engine.begin() as conn:
         conn.execute(text('DELETE FROM productos WHERE id=:pid'), {'pid': pid})
     return jsonify({'ok': True})
+
+
+@app.route('/api/productos/<int:pid>/costo', methods=['PATCH'])
+def update_costo(pid):
+    data = request.json
+    try:
+        costo = float(data.get('costo', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Costo inválido'}), 400
+    with engine.begin() as conn:
+        conn.execute(
+            text('UPDATE productos SET costo=:c WHERE id=:id'),
+            {'c': costo, 'id': pid}
+        )
+    return jsonify({'ok': True})
+
+
+@app.route('/api/inventario')
+def get_inventario():
+    with engine.connect() as conn:
+        rows = conn.execute(text('''
+            SELECT
+                s.producto,
+                s.color,
+                COALESCE(pr.id, 0)    AS prod_id,
+                COALESCE(pr.sku, '')  AS sku,
+                COALESCE(pr.costo, 0) AS costo,
+                SUM(s.cajas)                     AS total_cajas,
+                SUM(s.cajas * s.piezas_por_caja) AS total_piezas
+            FROM stock s
+            LEFT JOIN productos pr
+                   ON LOWER(pr.nombre) = LOWER(s.producto)
+                  AND LOWER(pr.color)  = LOWER(s.color)
+            GROUP BY s.producto, s.color, pr.id, pr.sku, pr.costo
+            ORDER BY s.producto, s.color
+        ''')).fetchall()
+    return jsonify([_row(r) for r in rows])
 
 
 @app.route('/api/buscar')

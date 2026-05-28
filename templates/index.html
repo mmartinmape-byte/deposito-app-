@@ -199,6 +199,7 @@ input:focus,select:focus{border-color:var(--blue)}
     <button onclick="goTo('movimiento',this)">+ Movimiento</button>
     <button onclick="goTo('buscar',this)">🔍 Buscar</button>
     <button onclick="goTo('historial',this)">Historial</button>
+    <button onclick="goToInventario(this)">📊 Inventario</button>
   </nav>
 </header>
 
@@ -366,6 +367,27 @@ input:focus,select:focus{border-color:var(--blue)}
   </div>
 </section>
 
+<!-- ─── INVENTARIO ─────────────────────────────────────────────────────────── -->
+<section id="sec-inventario" class="sec">
+  <div class="toolbar">
+    <div class="page-h" style="margin:0">Inventario valorizado</div>
+    <button class="btn btn-ghost" onclick="loadInventario()">↻ Actualizar</button>
+  </div>
+  <div id="inv-total-card" style="margin-bottom:1.2rem"></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>SKU</th><th>Producto</th><th>Color</th>
+          <th>Total cajas</th><th>Total piezas</th>
+          <th>Costo unitario ($)</th><th>Valor total</th>
+        </tr>
+      </thead>
+      <tbody id="inv-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
 </main>
 
 <!-- ─── MODAL: Nuevo producto ─────────────────────────────────────────────── -->
@@ -431,6 +453,23 @@ input:focus,select:focus{border-color:var(--blue)}
   </div>
 </div>
 
+<!-- ─── MODAL: Contraseña inventario ──────────────────────────────────────── -->
+<div class="overlay" id="modal-pwd">
+  <div class="modal">
+    <div class="modal-h">🔐 Acceso restringido</div>
+    <div class="form-g">
+      <label>Contraseña</label>
+      <input type="password" id="pwd-input" placeholder="••••••••"
+             onkeydown="if(event.key==='Enter')checkPwd()"/>
+    </div>
+    <div id="pwd-alert" class="alert"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closePwdModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="checkPwd()">Ingresar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -445,7 +484,7 @@ function goTo(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('sec-' + id).classList.add('show');
   btn.classList.add('active');
-  ({ dashboard: loadDashboard, palets: loadPaletsTable, catalogo: loadCatalogoSection, movimiento: loadMovForm, buscar: () => document.getElementById('buscar-input').focus(), historial: loadHistorial })[id]?.();
+  ({ dashboard: loadDashboard, palets: loadPaletsTable, catalogo: loadCatalogoSection, movimiento: loadMovForm, buscar: () => document.getElementById('buscar-input').focus(), historial: loadHistorial, inventario: loadInventario })[id]?.();
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -940,6 +979,103 @@ async function resetTodo() {
   await del('/api/reset');
   loadPaletsTable();
   alert('Depósito reseteado. Todo el stock fue eliminado.');
+}
+
+// ── Inventario ────────────────────────────────────────────────────────────────
+let _invUnlocked = false;
+let _invPendingBtn = null;
+
+function goToInventario(btn) {
+  if (_invUnlocked) { goTo('inventario', btn); return; }
+  _invPendingBtn = btn;
+  document.getElementById('pwd-input').value = '';
+  document.getElementById('pwd-alert').classList.remove('show');
+  document.getElementById('modal-pwd').classList.add('open');
+  setTimeout(() => document.getElementById('pwd-input').focus(), 60);
+}
+
+function closePwdModal() {
+  document.getElementById('modal-pwd').classList.remove('open');
+  _invPendingBtn = null;
+}
+
+function checkPwd() {
+  if (document.getElementById('pwd-input').value === 'matias5290') {
+    _invUnlocked = true;
+    document.getElementById('modal-pwd').classList.remove('open');
+    if (_invPendingBtn) goTo('inventario', _invPendingBtn);
+    _invPendingBtn = null;
+  } else {
+    showAlert(document.getElementById('pwd-alert'), 'err', 'Contraseña incorrecta.');
+  }
+}
+
+async function loadInventario() {
+  const data  = await get('/api/inventario');
+  const tbody = document.getElementById('inv-tbody');
+  const card  = document.getElementById('inv-total-card');
+
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--g400);padding:2rem">No hay stock en el depósito.</td></tr>`;
+    card.innerHTML  = '';
+    return;
+  }
+
+  let grandTotal = 0;
+
+  tbody.innerHTML = data.map(r => {
+    const valor = r.total_piezas * r.costo;
+    grandTotal += valor;
+    const costoCell = r.prod_id
+      ? `<div style="display:flex;align-items:center;gap:.35rem">
+           <span style="color:var(--g400)">$</span>
+           <input type="number" value="${r.costo}" min="0" step="0.01"
+                  style="width:110px;padding:.3rem .55rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit"
+                  onchange="updateCosto(${r.prod_id},this.value,this)"
+                  onfocus="this.style.borderColor='var(--blue)'"
+                  onblur="this.style.borderColor='var(--g200)'"/>
+         </div>`
+      : `<span style="color:var(--g400);font-size:.78rem">Sin catálogo</span>`;
+
+    const valorFmt = valor > 0
+      ? `<strong style="color:var(--blue-dk)">$${valor.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>`
+      : `<span style="color:var(--g400)">—</span>`;
+
+    return `<tr>
+      <td>${r.sku ? `<span class="badge b-transferencia">${e(r.sku)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
+      <td style="font-weight:500;color:var(--g900)">${e(r.producto)}</td>
+      <td>${e(r.color || '—')}</td>
+      <td style="font-weight:600;color:var(--blue-dk);text-align:center">${r.total_cajas}</td>
+      <td style="text-align:center">${r.total_piezas}</td>
+      <td>${costoCell}</td>
+      <td>${valorFmt}</td>
+    </tr>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div style="background:linear-gradient(135deg,var(--blue-dk),var(--blue));color:#fff;border-radius:var(--rlg);padding:1.2rem 1.8rem;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--shmd)">
+      <div>
+        <div style="font-size:.72rem;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;opacity:.75;margin-bottom:.25rem">Valor total en mercadería</div>
+        <div style="font-size:2rem;font-weight:700">$${grandTotal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>
+      <div style="font-size:2.5rem;opacity:.3">💰</div>
+    </div>`;
+}
+
+async function updateCosto(prodId, valor, inputEl) {
+  const costo = parseFloat(valor) || 0;
+  inputEl.style.borderColor = 'var(--orange)';
+  const res = await fetch('/api/productos/' + prodId + '/costo', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ costo })
+  }).then(r => r.json());
+  if (res.ok) {
+    inputEl.style.borderColor = 'var(--green)';
+    setTimeout(loadInventario, 600);
+  } else {
+    inputEl.style.borderColor = 'var(--red)';
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
