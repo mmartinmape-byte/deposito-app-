@@ -1,0 +1,18 @@
+{
+  "name": "Depósito Brothers",
+  "short_name": "Depósito",
+  "description": "Gestión de stock del depósito",
+  "start_url": "/mobile",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a3a5c",
+  "theme_color": "#1a3a5c",
+  "icons": [
+    {
+      "src": "/static/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

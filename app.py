@@ -241,6 +241,11 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/mobile')
+def mobile():
+    return render_template('mobile.html')
+
+
 @app.route('/api/palets')
 def get_palets():
     with engine.connect() as conn:

@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Depósito">
+<meta name="theme-color" content="#1a3a5c">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/logo.png">
+<title>Depósito Brothers</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #1a3a5c;
+    --navy-dark: #112840;
+    --blue: #2563eb;
+    --blue-light: #3b82f6;
+    --green: #16a34a;
+    --red: #dc2626;
+    --orange: #ea580c;
+    --gray-50: #f8fafc;
+    --gray-100: #f1f5f9;
+    --gray-200: #e2e8f0;
+    --gray-400: #94a3b8;
+    --gray-600: #475569;
+    --gray-800: #1e293b;
+    --radius: 14px;
+    --shadow: 0 2px 12px rgba(0,0,0,.12);
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--gray-50);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 16px;
+    color: var(--gray-800);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Layout ── */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    position: relative;
+  }
+
+  header {
+    background: var(--navy);
+    color: #fff;
+    padding: env(safe-area-inset-top, 12px) 16px 12px;
+    padding-top: max(env(safe-area-inset-top), 12px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    position: relative;
+    z-index: 10;
+  }
+
+  header img { height: 36px; background:#fff; border-radius:6px; padding:2px 6px; }
+
+  header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .3px; }
+
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+  }
+
+  /* ── Bottom Nav ── */
+  nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 480px;
+    background: #fff;
+    border-top: 1px solid var(--gray-200);
+    display: flex;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    z-index: 100;
+    box-shadow: 0 -2px 12px rgba(0,0,0,.08);
+  }
+
+  nav button {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 10px 4px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    color: var(--gray-400);
+    font-size: .7rem;
+    font-weight: 600;
+    transition: color .15s;
+  }
+
+  nav button svg { width: 24px; height: 24px; }
+  nav button.active { color: var(--navy); }
+  nav button.active svg { stroke: var(--navy); }
+
+  /* ── Views ── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── Cards ── */
+  .card {
+    background: #fff;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+
+  .card-title {
+    font-size: .8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--gray-400);
+    margin-bottom: 16px;
+  }
+
+  /* ── Form elements ── */
+  label {
+    display: block;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    margin-bottom: 5px;
+    margin-top: 14px;
+  }
+
+  label:first-of-type { margin-top: 0; }
+
+  input, select, textarea {
+    width: 100%;
+    padding: 13px 14px;
+    border: 1.5px solid var(--gray-200);
+    border-radius: 10px;
+    font-size: 1rem;
+    color: var(--gray-800);
+    background: #fff;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    transition: border-color .15s;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--blue-light);
+  }
+
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 40px;
+  }
+
+  textarea { resize: none; height: 80px; font-family: inherit; }
+
+  /* Producto search */
+  .search-wrapper { position: relative; }
+  .search-wrapper input { padding-right: 36px; }
+  .search-clear {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--gray-400);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+  }
+
+  .dropdown-list {
+    position: absolute;
+    left: 0; right: 0;
+    background: #fff;
+    border: 1.5px solid var(--gray-200);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 50;
+    box-shadow: 0 6px 16px rgba(0,0,0,.12);
+  }
+
+  .dropdown-list.hidden { display: none; }
+
+  .dropdown-item {
+    padding: 12px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--gray-100);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .dropdown-item:last-child { border-bottom: none; }
+  .dropdown-item:active { background: var(--gray-100); }
+
+  .di-nombre { font-weight: 600; font-size: .95rem; }
+  .di-sub { font-size: .78rem; color: var(--gray-400); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .15s, transform .1s;
+    margin-top: 20px;
+  }
+
+  .btn:active { transform: scale(.97); opacity: .9; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .btn-ingreso { background: var(--green); color: #fff; }
+  .btn-egreso  { background: var(--red);   color: #fff; }
+  .btn-buscar  { background: var(--navy);  color: #fff; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: var(--gray-800);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 100px;
+    font-size: .9rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: all .25s;
+    z-index: 200;
+    white-space: nowrap;
+    pointer-events: none;
+    max-width: 90vw;
+    text-align: center;
+  }
+
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  #toast.ok  { background: var(--green); }
+  #toast.err { background: var(--red); }
+
+  /* ── Stock view ── */
+  .palet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .palet-codigo {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--navy);
+  }
+
+  .palet-desc {
+    font-size: .82rem;
+    color: var(--gray-400);
+    margin-top: 2px;
+  }
+
+  .badge {
+    background: var(--navy);
+    color: #fff;
+    font-size: .75rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 100px;
+  }
+
+  .stock-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+
+  .stock-item:last-child { border-bottom: none; }
+
+  .si-left { flex: 1; }
+  .si-nombre { font-weight: 600; font-size: .95rem; }
+  .si-color  { font-size: .78rem; color: var(--gray-400); margin-top: 2px; }
+  .si-ppk    { font-size: .75rem; color: var(--gray-400); }
+
+  .si-cajas {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--navy);
+    text-align: right;
+  }
+
+  .si-cajas span { font-size: .7rem; font-weight: 500; color: var(--gray-400); display: block; }
+
+  .empty {
+    text-align: center;
+    color: var(--gray-400);
+    padding: 40px 20px;
+    font-size: .95rem;
+  }
+
+  /* ── Search tab ── */
+  .search-result-item {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+
+  .search-result-item:last-child { border-bottom: none; }
+
+  .sri-row1 { display: flex; justify-content: space-between; align-items: flex-start; }
+  .sri-nombre { font-weight: 700; }
+  .sri-cajas { font-size: 1.1rem; font-weight: 800; color: var(--navy); }
+  .sri-sub { font-size: .8rem; color: var(--gray-400); margin-top: 3px; }
+
+  .tab-title {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--navy);
+    margin-bottom: 16px;
+  }
+
+  /* ── Number row ── */
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* Spinner */
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    display: inline-block;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <img src="/static/logo.png" alt="Logo">
+    <h1>Depósito Brothers</h1>
+  </header>
+
+  <main id="main">
+
+    <!-- ── INGRESO ── -->
+    <div id="view-ingreso" class="view active">
+      <div class="tab-title">Ingreso de stock</div>
+      <div class="card">
+        <div class="card-title">Datos del movimiento</div>
+
+        <label>Palet destino</label>
+        <select id="ing-palet">
+          <option value="">Cargando palets…</option>
+        </select>
+
+        <label>Producto</label>
+        <div class="search-wrapper" style="position:relative">
+          <input type="text" id="ing-prod-search" placeholder="Buscar en catálogo…" autocomplete="off">
+          <button class="search-clear" id="ing-prod-clear">✕</button>
+          <div class="dropdown-list hidden" id="ing-prod-list"></div>
+        </div>
+        <input type="hidden" id="ing-prod-nombre">
+
+        <label>Color</label>
+        <input type="text" id="ing-color" placeholder="Ej: Blanco">
+
+        <div class="row-2">
+          <div>
+            <label>Cajas</label>
+            <input type="number" id="ing-cajas" min="1" placeholder="0">
+          </div>
+          <div>
+            <label>Pzas/caja</label>
+            <input type="number" id="ing-ppk" min="0" placeholder="0">
+          </div>
+        </div>
+
+        <label>Observación (opcional)</label>
+        <textarea id="ing-obs" placeholder="Notas…"></textarea>
+
+        <button class="btn btn-ingreso" id="ing-btn" onclick="submitMovimiento('ingreso')">
+          &#8595; Registrar ingreso
+        </button>
+      </div>
+    </div>
+
+    <!-- ── EGRESO ── -->
+    <div id="view-egreso" class="view">
+      <div class="tab-title">Egreso de stock</div>
+      <div class="card">
+        <div class="card-title">Datos del movimiento</div>
+
+        <label>Palet origen</label>
+        <select id="eg-palet">
+          <option value="">Cargando palets…</option>
+        </select>
+
+        <label>Producto</label>
+        <div class="search-wrapper" style="position:relative">
+          <input type="text" id="eg-prod-search" placeholder="Buscar en catálogo…" autocomplete="off">
+          <button class="search-clear" id="eg-prod-clear">✕</button>
+          <div class="dropdown-list hidden" id="eg-prod-list"></div>
+        </div>
+        <input type="hidden" id="eg-prod-nombre">
+
+        <label>Color</label>
+        <input type="text" id="eg-color" placeholder="Ej: Blanco">
+
+        <label>Cajas</label>
+        <input type="number" id="eg-cajas" min="1" placeholder="0">
+
+        <label>Observación (opcional)</label>
+        <textarea id="eg-obs" placeholder="Notas…"></textarea>
+
+        <button class="btn btn-egreso" id="eg-btn" onclick="submitMovimiento('egreso')">
+          &#8593; Registrar egreso
+        </button>
+      </div>
+    </div>
+
+    <!-- ── STOCK ── -->
+    <div id="view-stock" class="view">
+      <div class="tab-title">Consultar stock</div>
+
+      <div class="card">
+        <div class="card-title">Buscar producto</div>
+        <div class="search-wrapper" style="position:relative">
+          <input type="text" id="stock-search" placeholder="Nombre, color o SKU…" autocomplete="off">
+          <button class="search-clear" id="stock-search-clear">✕</button>
+        </div>
+        <button class="btn btn-buscar" style="margin-top:12px" onclick="buscarStock()">Buscar</button>
+        <div id="stock-search-results"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Ver por palet</div>
+        <select id="stock-palet" onchange="loadPaletStock()">
+          <option value="">— Elegir palet —</option>
+        </select>
+        <div id="stock-palet-content"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── Bottom Nav ── -->
+  <nav>
+    <button class="active" onclick="switchTab('ingreso')" id="nav-ingreso">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/>
+      </svg>
+      Ingreso
+    </button>
+    <button onclick="switchTab('egreso')" id="nav-egreso">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="16 7 12 3 8 7"/><line x1="12" y1="21" x2="12" y2="3"/>
+      </svg>
+      Egreso
+    </button>
+    <button onclick="switchTab('stock')" id="nav-stock">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+      Stock
+    </button>
+  </nav>
+
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── Estado global ──────────────────────────────────────────────────────────
+let palets = [];
+let productos = [];
+
+// ── Init ───────────────────────────────────────────────────────────────────
+(async function init() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+  }
+  await Promise.all([loadPalets(), loadProductos()]);
+})();
+
+async function loadPalets() {
+  try {
+    const r = await fetch('/api/palets');
+    palets = await r.json();
+    const opts = palets.map(p => `<option value="${p.id}">${p.codigo}${p.descripcion ? ' — ' + p.descripcion : ''}</option>`).join('');
+    const placeholder = '<option value="">— Elegir palet —</option>';
+    document.getElementById('ing-palet').innerHTML = placeholder + opts;
+    document.getElementById('eg-palet').innerHTML  = placeholder + opts;
+    document.getElementById('stock-palet').innerHTML = placeholder + opts;
+  } catch(e) {
+    toast('Error cargando palets', 'err');
+  }
+}
+
+async function loadProductos() {
+  try {
+    const r = await fetch('/api/productos');
+    productos = await r.json();
+  } catch(e) {}
+}
+
+// ── Navegación ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  ['ingreso','egreso','stock'].forEach(t => {
+    document.getElementById('view-' + t).classList.toggle('active', t === tab);
+    document.getElementById('nav-'  + t).classList.toggle('active', t === tab);
+  });
+  document.getElementById('main').scrollTop = 0;
+}
+
+// ── Buscador de productos (dropdown) ──────────────────────────────────────
+function setupProductSearch(searchId, listId, clearId, nombreId, colorId) {
+  const searchEl = document.getElementById(searchId);
+  const listEl   = document.getElementById(listId);
+  const clearEl  = document.getElementById(clearId);
+  const nombreEl = document.getElementById(nombreId);
+  const colorEl  = document.getElementById(colorId);
+
+  searchEl.addEventListener('input', () => {
+    const q = searchEl.value.trim().toLowerCase();
+    nombreEl.value = '';
+    if (!q) { listEl.classList.add('hidden'); return; }
+
+    const matches = productos.filter(p =>
+      p.nombre.toLowerCase().includes(q) ||
+      (p.sku  && p.sku.toLowerCase().includes(q)) ||
+      (p.color && p.color.toLowerCase().includes(q))
+    ).slice(0, 20);
+
+    if (!matches.length) { listEl.classList.add('hidden'); return; }
+
+    listEl.innerHTML = matches.map(p => `
+      <div class="dropdown-item" onclick="selectProducto('${searchId}','${listId}','${nombreId}','${colorId}',${JSON.stringify(p.nombre)},${JSON.stringify(p.color)})">
+        <span class="di-nombre">${p.nombre}</span>
+        <span class="di-sub">${p.color ? p.color + ' · ' : ''}SKU: ${p.sku}</span>
+      </div>
+    `).join('');
+    listEl.classList.remove('hidden');
+  });
+
+  clearEl.addEventListener('click', () => {
+    searchEl.value = '';
+    nombreEl.value = '';
+    listEl.classList.add('hidden');
+    if (colorEl) colorEl.value = '';
+    searchEl.focus();
+  });
+
+  document.addEventListener('click', e => {
+    if (!searchEl.contains(e.target) && !listEl.contains(e.target)) {
+      listEl.classList.add('hidden');
+    }
+  });
+}
+
+function selectProducto(searchId, listId, nombreId, colorId, nombre, color) {
+  document.getElementById(searchId).value = nombre;
+  document.getElementById(nombreId).value = nombre;
+  document.getElementById(listId).classList.add('hidden');
+  if (colorId && color) {
+    document.getElementById(colorId).value = color;
+  }
+}
+
+setupProductSearch('ing-prod-search','ing-prod-list','ing-prod-clear','ing-prod-nombre','ing-color');
+setupProductSearch('eg-prod-search', 'eg-prod-list', 'eg-prod-clear', 'eg-prod-nombre','eg-color');
+
+// ── Enviar movimiento ──────────────────────────────────────────────────────
+async function submitMovimiento(tipo) {
+  const prefix = tipo === 'ingreso' ? 'ing' : 'eg';
+
+  const palet_id  = parseInt(document.getElementById(prefix + '-palet').value);
+  const nombreHid = document.getElementById(prefix + '-prod-nombre').value.trim();
+  const nombreTxt = document.getElementById(prefix + '-prod-search').value.trim();
+  const producto  = nombreHid || nombreTxt;
+  const color     = document.getElementById(prefix + '-color').value.trim();
+  const cajas     = parseInt(document.getElementById(prefix + '-cajas').value);
+  const obs       = document.getElementById(prefix + '-obs').value.trim();
+  const ppk       = tipo === 'ingreso'
+    ? parseInt(document.getElementById('ing-ppk').value) || 0
+    : 0;
+
+  if (!palet_id) return toast('Elegí un palet', 'err');
+  if (!producto) return toast('Ingresá el producto', 'err');
+  if (!cajas || cajas < 1) return toast('Ingresá la cantidad de cajas', 'err');
+
+  const btn = document.getElementById(prefix + '-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Guardando…';
+
+  try {
+    const res = await fetch('/api/movimientos', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ tipo, palet_id, producto, color, cajas, piezas_por_caja: ppk, observacion: obs })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error');
+
+    toast(tipo === 'ingreso' ? '✓ Ingreso registrado' : '✓ Egreso registrado', 'ok');
+    resetForm(prefix);
+    await loadPalets();
+  } catch(e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = tipo === 'ingreso'
+      ? '&#8595; Registrar ingreso'
+      : '&#8593; Registrar egreso';
+  }
+}
+
+function resetForm(prefix) {
+  document.getElementById(prefix + '-palet').value = '';
+  document.getElementById(prefix + '-prod-search').value = '';
+  document.getElementById(prefix + '-prod-nombre').value = '';
+  document.getElementById(prefix + '-color').value = '';
+  document.getElementById(prefix + '-cajas').value = '';
+  document.getElementById(prefix + '-obs').value = '';
+  if (prefix === 'ing') document.getElementById('ing-ppk').value = '';
+}
+
+// ── Consulta de stock ──────────────────────────────────────────────────────
+async function loadPaletStock() {
+  const pid = document.getElementById('stock-palet').value;
+  const container = document.getElementById('stock-palet-content');
+  if (!pid) { container.innerHTML = ''; return; }
+
+  container.innerHTML = '<div class="empty">Cargando…</div>';
+  try {
+    const r = await fetch('/api/palets/' + pid + '/stock');
+    const items = await r.json();
+    const palet = palets.find(p => p.id == pid);
+
+    if (!items.length) {
+      container.innerHTML = '<div class="empty">Este palet no tiene stock</div>';
+      return;
+    }
+
+    const totalCajas = items.reduce((s, i) => s + i.cajas, 0);
+    container.innerHTML = `
+      <div class="palet-header" style="margin-top:16px">
+        <div>
+          <div class="palet-codigo">${palet ? palet.codigo : ''}</div>
+          ${palet && palet.descripcion ? `<div class="palet-desc">${palet.descripcion}</div>` : ''}
+        </div>
+        <span class="badge">${totalCajas} cajas</span>
+      </div>
+      ${items.map(i => `
+        <div class="stock-item">
+          <div class="si-left">
+            <div class="si-nombre">${i.producto}</div>
+            ${i.color ? `<div class="si-color">${i.color}</div>` : ''}
+            ${i.piezas_por_caja ? `<div class="si-ppk">${i.piezas_por_caja} pzas/caja · ${i.cajas * i.piezas_por_caja} pzas total</div>` : ''}
+          </div>
+          <div class="si-cajas">${i.cajas}<span>cajas</span></div>
+        </div>
+      `).join('')}
+    `;
+  } catch(e) {
+    container.innerHTML = '<div class="empty">Error cargando stock</div>';
+  }
+}
+
+async function buscarStock() {
+  const q = document.getElementById('stock-search').value.trim();
+  const container = document.getElementById('stock-search-results');
+  if (!q) { container.innerHTML = ''; return; }
+
+  container.innerHTML = '<div class="empty">Buscando…</div>';
+  try {
+    const r = await fetch('/api/buscar?q=' + encodeURIComponent(q));
+    const items = await r.json();
+
+    if (!items.length) {
+      container.innerHTML = '<div class="empty">Sin resultados para "' + q + '"</div>';
+      return;
+    }
+
+    container.innerHTML = '<div style="margin-top:16px">' + items.map(i => `
+      <div class="search-result-item">
+        <div class="sri-row1">
+          <span class="sri-nombre">${i.producto}</span>
+          <span class="sri-cajas">${i.cajas} caj.</span>
+        </div>
+        <div class="sri-sub">
+          ${i.color ? i.color + ' · ' : ''}Palet <strong>${i.palet_codigo}</strong>${i.palet_desc ? ' — ' + i.palet_desc : ''}${i.sku ? ' · SKU ' + i.sku : ''}
+          ${i.piezas_por_caja ? ' · ' + i.piezas_por_caja + ' pzas/caja' : ''}
+        </div>
+      </div>
+    `).join('') + '</div>';
+  } catch(e) {
+    container.innerHTML = '<div class="empty">Error en la búsqueda</div>';
+  }
+}
+
+// Enter en buscador de stock
+document.getElementById('stock-search').addEventListener('keydown', e => {
+  if (e.key === 'Enter') buscarStock();
+});
+
+document.getElementById('stock-search-clear').addEventListener('click', () => {
+  document.getElementById('stock-search').value = '';
+  document.getElementById('stock-search-results').innerHTML = '';
+});
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+let _toastTimer;
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ''; }, 2800);
+}
+</script>
+</body>
+</html>
