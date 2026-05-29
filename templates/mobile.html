@@ -16,12 +16,11 @@
 
   :root {
     --navy: #1a3a5c;
-    --navy-dark: #112840;
-    --blue: #2563eb;
     --blue-light: #3b82f6;
     --green: #16a34a;
+    --green-bg: #f0fdf4;
     --red: #dc2626;
-    --orange: #ea580c;
+    --red-bg: #fef2f2;
     --gray-50: #f8fafc;
     --gray-100: #f1f5f9;
     --gray-200: #e2e8f0;
@@ -41,32 +40,27 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* ── Layout ── */
   #app {
     display: flex;
     flex-direction: column;
     height: 100%;
     max-width: 480px;
     margin: 0 auto;
-    position: relative;
   }
 
   header {
     background: var(--navy);
     color: #fff;
-    padding: env(safe-area-inset-top, 12px) 16px 12px;
-    padding-top: max(env(safe-area-inset-top), 12px);
+    padding: max(env(safe-area-inset-top), 12px) 16px 12px;
     display: flex;
     align-items: center;
     gap: 10px;
     box-shadow: 0 2px 8px rgba(0,0,0,.3);
-    position: relative;
     z-index: 10;
   }
 
   header img { height: 36px; background:#fff; border-radius:6px; padding:2px 6px; }
-
-  header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .3px; }
+  header h1  { font-size: 1.1rem; font-weight: 700; }
 
   main {
     flex: 1;
@@ -75,14 +69,12 @@
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
   }
 
-  /* ── Bottom Nav ── */
+  /* ── Nav ── */
   nav {
     position: fixed;
-    bottom: 0;
-    left: 50%;
+    bottom: 0; left: 50%;
     transform: translateX(-50%);
-    width: 100%;
-    max-width: 480px;
+    width: 100%; max-width: 480px;
     background: #fff;
     border-top: 1px solid var(--gray-200);
     display: flex;
@@ -92,24 +84,14 @@
   }
 
   nav button {
-    flex: 1;
-    background: none;
-    border: none;
+    flex: 1; background: none; border: none;
     padding: 10px 4px 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    cursor: pointer;
-    color: var(--gray-400);
-    font-size: .7rem;
-    font-weight: 600;
-    transition: color .15s;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; color: var(--gray-400);
+    font-size: .7rem; font-weight: 600; transition: color .15s;
   }
-
   nav button svg { width: 24px; height: 24px; }
   nav button.active { color: var(--navy); }
-  nav button.active svg { stroke: var(--navy); }
 
   /* ── Views ── */
   .view { display: none; }
@@ -125,43 +107,31 @@
   }
 
   .card-title {
-    font-size: .8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .8px;
-    color: var(--gray-400);
-    margin-bottom: 16px;
+    font-size: .78rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .8px;
+    color: var(--gray-400); margin-bottom: 16px;
   }
 
-  /* ── Form elements ── */
+  .tab-title {
+    font-size: 1.2rem; font-weight: 800;
+    color: var(--navy); margin-bottom: 16px;
+  }
+
+  /* ── Form ── */
   label {
-    display: block;
-    font-size: .82rem;
-    font-weight: 600;
-    color: var(--gray-600);
-    margin-bottom: 5px;
-    margin-top: 14px;
+    display: block; font-size: .82rem; font-weight: 600;
+    color: var(--gray-600); margin-bottom: 5px; margin-top: 14px;
   }
-
   label:first-of-type { margin-top: 0; }
 
   input, select, textarea {
-    width: 100%;
-    padding: 13px 14px;
-    border: 1.5px solid var(--gray-200);
-    border-radius: 10px;
-    font-size: 1rem;
-    color: var(--gray-800);
-    background: #fff;
-    appearance: none;
-    -webkit-appearance: none;
-    outline: none;
+    width: 100%; padding: 13px 14px;
+    border: 1.5px solid var(--gray-200); border-radius: 10px;
+    font-size: 1rem; color: var(--gray-800); background: #fff;
+    appearance: none; -webkit-appearance: none; outline: none;
     transition: border-color .15s;
   }
-
-  input:focus, select:focus, textarea:focus {
-    border-color: var(--blue-light);
-  }
+  input:focus, select:focus, textarea:focus { border-color: var(--blue-light); }
 
   select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
@@ -172,199 +142,184 @@
 
   textarea { resize: none; height: 80px; font-family: inherit; }
 
-  /* Producto search */
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ── Palet stock mini ── */
+  .palet-stock-mini {
+    margin-top: 10px;
+    background: var(--gray-50);
+    border-radius: 10px;
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+  }
+
+  .psm-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--gray-100);
+    font-size: .75rem; font-weight: 700; color: var(--gray-600);
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+
+  .psm-badge {
+    background: var(--navy); color: #fff;
+    font-size: .7rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 100px;
+  }
+
+  .psm-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px;
+    border-top: 1px solid var(--gray-200);
+    font-size: .85rem;
+  }
+
+  .psm-nombre { font-weight: 600; }
+  .psm-color  { font-size: .75rem; color: var(--gray-400); margin-top: 1px; }
+  .psm-cajas  { font-weight: 800; color: var(--navy); font-size: .95rem; }
+  .psm-empty  { padding: 10px 12px; font-size: .85rem; color: var(--gray-400); }
+
+  /* ── Ingreso dropdown search ── */
   .search-wrapper { position: relative; }
   .search-wrapper input { padding-right: 36px; }
+
   .search-clear {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    color: var(--gray-400);
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 4px;
-    line-height: 1;
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--gray-400);
+    font-size: 1.1rem; cursor: pointer; padding: 4px; line-height: 1;
   }
 
   .dropdown-list {
-    position: absolute;
-    left: 0; right: 0;
+    position: absolute; left: 0; right: 0;
     background: #fff;
-    border: 1.5px solid var(--gray-200);
-    border-top: none;
+    border: 1.5px solid var(--gray-200); border-top: none;
     border-radius: 0 0 10px 10px;
-    max-height: 220px;
-    overflow-y: auto;
+    max-height: 220px; overflow-y: auto;
     z-index: 50;
     box-shadow: 0 6px 16px rgba(0,0,0,.12);
   }
-
   .dropdown-list.hidden { display: none; }
 
   .dropdown-item {
-    padding: 12px 14px;
-    cursor: pointer;
+    padding: 12px 14px; cursor: pointer;
     border-bottom: 1px solid var(--gray-100);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    display: flex; flex-direction: column; gap: 2px;
   }
-
   .dropdown-item:last-child { border-bottom: none; }
   .dropdown-item:active { background: var(--gray-100); }
-
   .di-nombre { font-weight: 600; font-size: .95rem; }
-  .di-sub { font-size: .78rem; color: var(--gray-400); }
+  .di-sub    { font-size: .78rem; color: var(--gray-400); }
+
+  /* ── Egreso: lista de productos del palet ── */
+  .eg-prod-list-wrap {
+    margin-top: 10px;
+  }
+
+  .eg-prod-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 13px 14px;
+    border: 1.5px solid var(--gray-200);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    background: #fff;
+  }
+
+  .eg-prod-item.selected {
+    border-color: var(--red);
+    background: var(--red-bg);
+  }
+
+  .eg-prod-item .epi-left { flex: 1; }
+  .eg-prod-item .epi-nombre { font-weight: 700; font-size: .95rem; }
+  .eg-prod-item .epi-color  { font-size: .78rem; color: var(--gray-400); margin-top: 2px; }
+  .eg-prod-item .epi-cajas  {
+    font-size: 1.1rem; font-weight: 800; color: var(--navy);
+    text-align: right;
+  }
+  .eg-prod-item.selected .epi-cajas { color: var(--red); }
+  .eg-prod-item .epi-cajas span { font-size: .65rem; font-weight: 500; color: var(--gray-400); display: block; }
+
+  .eg-no-palet {
+    padding: 14px; border-radius: 10px;
+    background: var(--gray-100); color: var(--gray-400);
+    font-size: .88rem; text-align: center;
+  }
+
+  .eg-no-stock {
+    padding: 14px; border-radius: 10px;
+    background: var(--gray-100); color: var(--gray-400);
+    font-size: .88rem; text-align: center;
+  }
 
   /* ── Buttons ── */
   .btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 16px;
-    border: none;
-    border-radius: 12px;
-    font-size: 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: opacity .15s, transform .1s;
-    margin-top: 20px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 16px; border: none; border-radius: 12px;
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    transition: opacity .15s, transform .1s; margin-top: 20px;
   }
-
   .btn:active { transform: scale(.97); opacity: .9; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
-
   .btn-ingreso { background: var(--green); color: #fff; }
   .btn-egreso  { background: var(--red);   color: #fff; }
   .btn-buscar  { background: var(--navy);  color: #fff; }
 
   /* ── Toast ── */
   #toast {
-    position: fixed;
-    top: 80px;
-    left: 50%;
+    position: fixed; top: 80px; left: 50%;
     transform: translateX(-50%) translateY(-20px);
-    background: var(--gray-800);
-    color: #fff;
-    padding: 12px 20px;
-    border-radius: 100px;
-    font-size: .9rem;
-    font-weight: 600;
-    opacity: 0;
-    transition: all .25s;
-    z-index: 200;
-    white-space: nowrap;
-    pointer-events: none;
-    max-width: 90vw;
-    text-align: center;
+    background: var(--gray-800); color: #fff;
+    padding: 12px 20px; border-radius: 100px;
+    font-size: .9rem; font-weight: 600;
+    opacity: 0; transition: all .25s; z-index: 200;
+    white-space: nowrap; pointer-events: none;
+    max-width: 90vw; text-align: center;
   }
-
-  #toast.show {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #toast.ok  { background: var(--green); }
   #toast.err { background: var(--red); }
 
   /* ── Stock view ── */
-  .palet-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-  }
-
-  .palet-codigo {
-    font-size: 1.4rem;
-    font-weight: 800;
-    color: var(--navy);
-  }
-
-  .palet-desc {
-    font-size: .82rem;
-    color: var(--gray-400);
-    margin-top: 2px;
-  }
-
-  .badge {
-    background: var(--navy);
-    color: #fff;
-    font-size: .75rem;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 100px;
-  }
-
   .stock-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--gray-100);
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--gray-100);
   }
-
   .stock-item:last-child { border-bottom: none; }
-
   .si-left { flex: 1; }
   .si-nombre { font-weight: 600; font-size: .95rem; }
   .si-color  { font-size: .78rem; color: var(--gray-400); margin-top: 2px; }
   .si-ppk    { font-size: .75rem; color: var(--gray-400); }
-
-  .si-cajas {
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: var(--navy);
-    text-align: right;
-  }
-
+  .si-cajas  { font-size: 1.3rem; font-weight: 800; color: var(--navy); text-align: right; }
   .si-cajas span { font-size: .7rem; font-weight: 500; color: var(--gray-400); display: block; }
 
-  .empty {
-    text-align: center;
-    color: var(--gray-400);
-    padding: 40px 20px;
-    font-size: .95rem;
+  .palet-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .palet-codigo { font-size: 1.4rem; font-weight: 800; color: var(--navy); }
+  .palet-desc   { font-size: .82rem; color: var(--gray-400); margin-top: 2px; }
+  .badge {
+    background: var(--navy); color: #fff;
+    font-size: .75rem; font-weight: 700; padding: 4px 10px; border-radius: 100px;
   }
 
-  /* ── Search tab ── */
-  .search-result-item {
-    padding: 14px 0;
-    border-bottom: 1px solid var(--gray-100);
-  }
-
+  .search-result-item { padding: 14px 0; border-bottom: 1px solid var(--gray-100); }
   .search-result-item:last-child { border-bottom: none; }
-
   .sri-row1 { display: flex; justify-content: space-between; align-items: flex-start; }
   .sri-nombre { font-weight: 700; }
-  .sri-cajas { font-size: 1.1rem; font-weight: 800; color: var(--navy); }
-  .sri-sub { font-size: .8rem; color: var(--gray-400); margin-top: 3px; }
+  .sri-cajas  { font-size: 1.1rem; font-weight: 800; color: var(--navy); }
+  .sri-sub    { font-size: .8rem; color: var(--gray-400); margin-top: 3px; }
 
-  .tab-title {
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: var(--navy);
-    margin-bottom: 16px;
-  }
-
-  /* ── Number row ── */
-  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .empty { text-align: center; color: var(--gray-400); padding: 40px 20px; font-size: .95rem; }
 
   /* Spinner */
   .spinner {
     width: 18px; height: 18px;
-    border: 2px solid rgba(255,255,255,.4);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin .6s linear infinite;
-    display: inline-block;
+    border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+    border-radius: 50%; animation: spin .6s linear infinite; display: inline-block;
   }
-
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
@@ -378,19 +333,22 @@
 
   <main id="main">
 
-    <!-- ── INGRESO ── -->
+    <!-- ══ INGRESO ══ -->
     <div id="view-ingreso" class="view active">
       <div class="tab-title">Ingreso de stock</div>
       <div class="card">
         <div class="card-title">Datos del movimiento</div>
 
         <label>Palet destino</label>
-        <select id="ing-palet">
-          <option value="">Cargando palets…</option>
+        <select id="ing-palet" onchange="onIngPaletChange()">
+          <option value="">— Elegir palet —</option>
         </select>
 
-        <label>Producto</label>
-        <div class="search-wrapper" style="position:relative">
+        <!-- Stock actual del palet -->
+        <div id="ing-palet-stock"></div>
+
+        <label style="margin-top:18px">Producto</label>
+        <div class="search-wrapper">
           <input type="text" id="ing-prod-search" placeholder="Buscar en catálogo…" autocomplete="off">
           <button class="search-clear" id="ing-prod-clear">✕</button>
           <div class="dropdown-list hidden" id="ing-prod-list"></div>
@@ -403,11 +361,11 @@
         <div class="row-2">
           <div>
             <label>Cajas</label>
-            <input type="number" id="ing-cajas" min="1" placeholder="0">
+            <input type="number" id="ing-cajas" min="1" placeholder="0" inputmode="numeric">
           </div>
           <div>
             <label>Pzas/caja</label>
-            <input type="number" id="ing-ppk" min="0" placeholder="0">
+            <input type="number" id="ing-ppk" min="0" placeholder="0" inputmode="numeric">
           </div>
         </div>
 
@@ -415,52 +373,51 @@
         <textarea id="ing-obs" placeholder="Notas…"></textarea>
 
         <button class="btn btn-ingreso" id="ing-btn" onclick="submitMovimiento('ingreso')">
-          &#8595; Registrar ingreso
+          ↓ Registrar ingreso
         </button>
       </div>
     </div>
 
-    <!-- ── EGRESO ── -->
+    <!-- ══ EGRESO ══ -->
     <div id="view-egreso" class="view">
       <div class="tab-title">Egreso de stock</div>
       <div class="card">
         <div class="card-title">Datos del movimiento</div>
 
         <label>Palet origen</label>
-        <select id="eg-palet">
-          <option value="">Cargando palets…</option>
+        <select id="eg-palet" onchange="onEgPaletChange()">
+          <option value="">— Elegir palet —</option>
         </select>
 
-        <label>Producto</label>
-        <div class="search-wrapper" style="position:relative">
-          <input type="text" id="eg-prod-search" placeholder="Buscar en catálogo…" autocomplete="off">
-          <button class="search-clear" id="eg-prod-clear">✕</button>
-          <div class="dropdown-list hidden" id="eg-prod-list"></div>
+        <label style="margin-top:18px">Producto a retirar</label>
+        <div id="eg-prod-list-container">
+          <div class="eg-no-palet">Elegí un palet para ver los productos disponibles</div>
         </div>
+
+        <!-- campos hidden que se llenan al seleccionar producto -->
         <input type="hidden" id="eg-prod-nombre">
+        <input type="hidden" id="eg-color">
+        <input type="hidden" id="eg-ppk">
 
-        <label>Color</label>
-        <input type="text" id="eg-color" placeholder="Ej: Blanco">
-
-        <label>Cajas</label>
-        <input type="number" id="eg-cajas" min="1" placeholder="0">
+        <label>Cajas a retirar</label>
+        <input type="number" id="eg-cajas" min="1" placeholder="0" inputmode="numeric">
 
         <label>Observación (opcional)</label>
         <textarea id="eg-obs" placeholder="Notas…"></textarea>
 
         <button class="btn btn-egreso" id="eg-btn" onclick="submitMovimiento('egreso')">
-          &#8593; Registrar egreso
+          ↑ Registrar egreso
         </button>
       </div>
     </div>
 
-    <!-- ── STOCK ── -->
+    <!-- ══ STOCK ══ -->
     <div id="view-stock" class="view">
       <div class="tab-title">Consultar stock</div>
 
       <div class="card">
         <div class="card-title">Buscar producto</div>
-        <div class="search-wrapper" style="position:relative">
+        <div class="search-wrapper">
           <input type="text" id="stock-search" placeholder="Nombre, color o SKU…" autocomplete="off">
           <button class="search-clear" id="stock-search-clear">✕</button>
         </div>
@@ -470,7 +427,7 @@
 
       <div class="card">
         <div class="card-title">Ver por palet</div>
-        <select id="stock-palet" onchange="loadPaletStock()">
+        <select id="stock-palet" onchange="loadPaletStockView()">
           <option value="">— Elegir palet —</option>
         </select>
         <div id="stock-palet-content"></div>
@@ -479,7 +436,6 @@
 
   </main>
 
-  <!-- ── Bottom Nav ── -->
   <nav>
     <button class="active" onclick="switchTab('ingreso')" id="nav-ingreso">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -500,18 +456,17 @@
       Stock
     </button>
   </nav>
-
 </div>
 
-<!-- Toast -->
 <div id="toast"></div>
 
 <script>
-// ── Estado global ──────────────────────────────────────────────────────────
-let palets = [];
+// ── Estado ────────────────────────────────────────────────────────────────
+let palets    = [];
 let productos = [];
+let egStockItems = [];   // items del palet seleccionado en egreso
 
-// ── Init ───────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────
 (async function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js').catch(() => {});
@@ -523,11 +478,13 @@ async function loadPalets() {
   try {
     const r = await fetch('/api/palets');
     palets = await r.json();
-    const opts = palets.map(p => `<option value="${p.id}">${p.codigo}${p.descripcion ? ' — ' + p.descripcion : ''}</option>`).join('');
-    const placeholder = '<option value="">— Elegir palet —</option>';
-    document.getElementById('ing-palet').innerHTML = placeholder + opts;
-    document.getElementById('eg-palet').innerHTML  = placeholder + opts;
-    document.getElementById('stock-palet').innerHTML = placeholder + opts;
+    const opts = palets.map(p =>
+      `<option value="${p.id}">${p.codigo}${p.descripcion ? ' — ' + p.descripcion : ''}</option>`
+    ).join('');
+    const ph = '<option value="">— Elegir palet —</option>';
+    ['ing-palet','eg-palet','stock-palet'].forEach(id => {
+      document.getElementById(id).innerHTML = ph + opts;
+    });
   } catch(e) {
     toast('Error cargando palets', 'err');
   }
@@ -540,7 +497,7 @@ async function loadProductos() {
   } catch(e) {}
 }
 
-// ── Navegación ─────────────────────────────────────────────────────────────
+// ── Navegación ────────────────────────────────────────────────────────────
 function switchTab(tab) {
   ['ingreso','egreso','stock'].forEach(t => {
     document.getElementById('view-' + t).classList.toggle('active', t === tab);
@@ -549,13 +506,118 @@ function switchTab(tab) {
   document.getElementById('main').scrollTop = 0;
 }
 
-// ── Buscador de productos (dropdown) ──────────────────────────────────────
-function setupProductSearch(searchId, listId, clearId, nombreId, colorId) {
-  const searchEl = document.getElementById(searchId);
-  const listEl   = document.getElementById(listId);
-  const clearEl  = document.getElementById(clearId);
-  const nombreEl = document.getElementById(nombreId);
-  const colorEl  = document.getElementById(colorId);
+// ── Stock mini: muestra el contenido actual de un palet ───────────────────
+async function renderPaletStockMini(pid, containerId) {
+  const container = document.getElementById(containerId);
+  if (!pid) { container.innerHTML = ''; return; }
+
+  container.innerHTML = '<div class="palet-stock-mini"><div class="psm-header">Cargando…</div></div>';
+  try {
+    const r = await fetch('/api/palets/' + pid + '/stock');
+    const items = await r.json();
+    const totalCajas = items.reduce((s, i) => s + i.cajas, 0);
+
+    if (!items.length) {
+      container.innerHTML = '<div class="palet-stock-mini"><div class="psm-empty">Este palet está vacío</div></div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="palet-stock-mini">
+        <div class="psm-header">
+          <span>Stock actual</span>
+          <span class="psm-badge">${totalCajas} cajas</span>
+        </div>
+        ${items.map(i => `
+          <div class="psm-item">
+            <div>
+              <div class="psm-nombre">${escHtml(i.producto)}</div>
+              ${i.color ? `<div class="psm-color">${escHtml(i.color)}</div>` : ''}
+            </div>
+            <div class="psm-cajas">${i.cajas} caj.</div>
+          </div>
+        `).join('')}
+      </div>`;
+  } catch(e) {
+    container.innerHTML = '';
+  }
+}
+
+// ── INGRESO: al cambiar palet ─────────────────────────────────────────────
+async function onIngPaletChange() {
+  const pid = document.getElementById('ing-palet').value;
+  await renderPaletStockMini(pid, 'ing-palet-stock');
+}
+
+// ── EGRESO: al cambiar palet ──────────────────────────────────────────────
+async function onEgPaletChange() {
+  const pid = document.getElementById('eg-palet').value;
+  const container = document.getElementById('eg-prod-list-container');
+
+  // Limpiar selección previa
+  document.getElementById('eg-prod-nombre').value = '';
+  document.getElementById('eg-color').value = '';
+  document.getElementById('eg-ppk').value = '';
+  egStockItems = [];
+
+  if (!pid) {
+    container.innerHTML = '<div class="eg-no-palet">Elegí un palet para ver los productos disponibles</div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="eg-no-palet">Cargando…</div>';
+  try {
+    const r = await fetch('/api/palets/' + pid + '/stock');
+    egStockItems = await r.json();
+
+    if (!egStockItems.length) {
+      container.innerHTML = '<div class="eg-no-stock">Este palet no tiene stock</div>';
+      return;
+    }
+
+    renderEgProductList(container);
+  } catch(e) {
+    container.innerHTML = '<div class="eg-no-palet">Error cargando productos</div>';
+  }
+}
+
+function renderEgProductList(container) {
+  const selectedNombre = document.getElementById('eg-prod-nombre').value;
+  const selectedColor  = document.getElementById('eg-color').value;
+
+  container.innerHTML = '<div class="eg-prod-list-wrap">' +
+    egStockItems.map((item, idx) => {
+      const isSelected = item.producto === selectedNombre && item.color === selectedColor;
+      return `
+        <div class="eg-prod-item${isSelected ? ' selected' : ''}" data-idx="${idx}">
+          <div class="epi-left">
+            <div class="epi-nombre">${escHtml(item.producto)}</div>
+            ${item.color ? `<div class="epi-color">${escHtml(item.color)}</div>` : ''}
+          </div>
+          <div class="epi-cajas">${item.cajas}<span>cajas</span></div>
+        </div>`;
+    }).join('') + '</div>';
+
+  // Event listeners en cada ítem (evita problemas con comillas en nombres)
+  container.querySelectorAll('.eg-prod-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx  = parseInt(el.dataset.idx);
+      const item = egStockItems[idx];
+      document.getElementById('eg-prod-nombre').value = item.producto;
+      document.getElementById('eg-color').value       = item.color || '';
+      document.getElementById('eg-ppk').value         = item.piezas_por_caja || 0;
+      renderEgProductList(container); // re-render para marcar seleccionado
+    });
+  });
+}
+
+// ── Buscador de catálogo (ingreso) ────────────────────────────────────────
+(function setupIngSearch() {
+  const searchEl = document.getElementById('ing-prod-search');
+  const listEl   = document.getElementById('ing-prod-list');
+  const clearEl  = document.getElementById('ing-prod-clear');
+  const nombreEl = document.getElementById('ing-prod-nombre');
+  const colorEl  = document.getElementById('ing-color');
 
   searchEl.addEventListener('input', () => {
     const q = searchEl.value.trim().toLowerCase();
@@ -564,68 +626,81 @@ function setupProductSearch(searchId, listId, clearId, nombreId, colorId) {
 
     const matches = productos.filter(p =>
       p.nombre.toLowerCase().includes(q) ||
-      (p.sku  && p.sku.toLowerCase().includes(q)) ||
+      (p.sku   && p.sku.toLowerCase().includes(q)) ||
       (p.color && p.color.toLowerCase().includes(q))
     ).slice(0, 20);
 
     if (!matches.length) { listEl.classList.add('hidden'); return; }
 
-    listEl.innerHTML = matches.map(p => `
-      <div class="dropdown-item" onclick="selectProducto('${searchId}','${listId}','${nombreId}','${colorId}',${JSON.stringify(p.nombre)},${JSON.stringify(p.color)})">
-        <span class="di-nombre">${p.nombre}</span>
-        <span class="di-sub">${p.color ? p.color + ' · ' : ''}SKU: ${p.sku}</span>
-      </div>
-    `).join('');
+    listEl.innerHTML = matches.map((p, i) =>
+      `<div class="dropdown-item" data-i="${i}">
+        <span class="di-nombre">${escHtml(p.nombre)}</span>
+        <span class="di-sub">${p.color ? escHtml(p.color) + ' · ' : ''}SKU: ${escHtml(p.sku)}</span>
+      </div>`
+    ).join('');
+
+    // Guardar referencia a los matches para los listeners
+    listEl._matches = matches;
     listEl.classList.remove('hidden');
+
+    listEl.querySelectorAll('.dropdown-item').forEach(el => {
+      el.addEventListener('mousedown', e => e.preventDefault()); // evita que blur cierre antes del click
+      el.addEventListener('click', () => {
+        const prod = listEl._matches[parseInt(el.dataset.i)];
+        searchEl.value = prod.nombre;
+        nombreEl.value = prod.nombre;
+        if (prod.color) colorEl.value = prod.color;
+        listEl.classList.add('hidden');
+      });
+    });
   });
 
   clearEl.addEventListener('click', () => {
-    searchEl.value = '';
-    nombreEl.value = '';
+    searchEl.value = ''; nombreEl.value = '';
+    colorEl.value = '';
     listEl.classList.add('hidden');
-    if (colorEl) colorEl.value = '';
     searchEl.focus();
   });
 
-  document.addEventListener('click', e => {
-    if (!searchEl.contains(e.target) && !listEl.contains(e.target)) {
-      listEl.classList.add('hidden');
-    }
+  searchEl.addEventListener('blur', () => {
+    setTimeout(() => listEl.classList.add('hidden'), 150);
   });
-}
+})();
 
-function selectProducto(searchId, listId, nombreId, colorId, nombre, color) {
-  document.getElementById(searchId).value = nombre;
-  document.getElementById(nombreId).value = nombre;
-  document.getElementById(listId).classList.add('hidden');
-  if (colorId && color) {
-    document.getElementById(colorId).value = color;
-  }
-}
-
-setupProductSearch('ing-prod-search','ing-prod-list','ing-prod-clear','ing-prod-nombre','ing-color');
-setupProductSearch('eg-prod-search', 'eg-prod-list', 'eg-prod-clear', 'eg-prod-nombre','eg-color');
-
-// ── Enviar movimiento ──────────────────────────────────────────────────────
+// ── Enviar movimiento ─────────────────────────────────────────────────────
 async function submitMovimiento(tipo) {
-  const prefix = tipo === 'ingreso' ? 'ing' : 'eg';
+  let palet_id, producto, color, cajas, ppk, obs;
 
-  const palet_id  = parseInt(document.getElementById(prefix + '-palet').value);
-  const nombreHid = document.getElementById(prefix + '-prod-nombre').value.trim();
-  const nombreTxt = document.getElementById(prefix + '-prod-search').value.trim();
-  const producto  = nombreHid || nombreTxt;
-  const color     = document.getElementById(prefix + '-color').value.trim();
-  const cajas     = parseInt(document.getElementById(prefix + '-cajas').value);
-  const obs       = document.getElementById(prefix + '-obs').value.trim();
-  const ppk       = tipo === 'ingreso'
-    ? parseInt(document.getElementById('ing-ppk').value) || 0
-    : 0;
+  if (tipo === 'ingreso') {
+    palet_id = parseInt(document.getElementById('ing-palet').value);
+    producto = (document.getElementById('ing-prod-nombre').value || document.getElementById('ing-prod-search').value).trim();
+    color    = document.getElementById('ing-color').value.trim();
+    cajas    = parseInt(document.getElementById('ing-cajas').value);
+    ppk      = parseInt(document.getElementById('ing-ppk').value) || 0;
+    obs      = document.getElementById('ing-obs').value.trim();
+  } else {
+    palet_id = parseInt(document.getElementById('eg-palet').value);
+    producto = document.getElementById('eg-prod-nombre').value.trim();
+    color    = document.getElementById('eg-color').value.trim();
+    cajas    = parseInt(document.getElementById('eg-cajas').value);
+    ppk      = parseInt(document.getElementById('eg-ppk').value) || 0;
+    obs      = document.getElementById('eg-obs').value.trim();
+  }
 
   if (!palet_id) return toast('Elegí un palet', 'err');
-  if (!producto) return toast('Ingresá el producto', 'err');
+  if (!producto) return toast('Seleccioná un producto', 'err');
   if (!cajas || cajas < 1) return toast('Ingresá la cantidad de cajas', 'err');
 
-  const btn = document.getElementById(prefix + '-btn');
+  // Validar que no supere el stock disponible en egreso
+  if (tipo === 'egreso') {
+    const item = egStockItems.find(i => i.producto === producto && i.color === color);
+    if (item && cajas > item.cajas) {
+      return toast(`Máximo ${item.cajas} cajas disponibles`, 'err');
+    }
+  }
+
+  const btnId = tipo === 'ingreso' ? 'ing-btn' : 'eg-btn';
+  const btn = document.getElementById(btnId);
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Guardando…';
 
@@ -639,30 +714,41 @@ async function submitMovimiento(tipo) {
     if (!res.ok) throw new Error(data.error || 'Error');
 
     toast(tipo === 'ingreso' ? '✓ Ingreso registrado' : '✓ Egreso registrado', 'ok');
-    resetForm(prefix);
+    resetForm(tipo);
     await loadPalets();
   } catch(e) {
     toast(e.message, 'err');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = tipo === 'ingreso'
-      ? '&#8595; Registrar ingreso'
-      : '&#8593; Registrar egreso';
+    btn.innerHTML = tipo === 'ingreso' ? '↓ Registrar ingreso' : '↑ Registrar egreso';
   }
 }
 
-function resetForm(prefix) {
-  document.getElementById(prefix + '-palet').value = '';
-  document.getElementById(prefix + '-prod-search').value = '';
-  document.getElementById(prefix + '-prod-nombre').value = '';
-  document.getElementById(prefix + '-color').value = '';
-  document.getElementById(prefix + '-cajas').value = '';
-  document.getElementById(prefix + '-obs').value = '';
-  if (prefix === 'ing') document.getElementById('ing-ppk').value = '';
+function resetForm(tipo) {
+  if (tipo === 'ingreso') {
+    document.getElementById('ing-palet').value = '';
+    document.getElementById('ing-palet-stock').innerHTML = '';
+    document.getElementById('ing-prod-search').value = '';
+    document.getElementById('ing-prod-nombre').value = '';
+    document.getElementById('ing-color').value = '';
+    document.getElementById('ing-cajas').value = '';
+    document.getElementById('ing-ppk').value = '';
+    document.getElementById('ing-obs').value = '';
+  } else {
+    document.getElementById('eg-palet').value = '';
+    document.getElementById('eg-prod-list-container').innerHTML =
+      '<div class="eg-no-palet">Elegí un palet para ver los productos disponibles</div>';
+    document.getElementById('eg-prod-nombre').value = '';
+    document.getElementById('eg-color').value = '';
+    document.getElementById('eg-ppk').value = '';
+    document.getElementById('eg-cajas').value = '';
+    document.getElementById('eg-obs').value = '';
+    egStockItems = [];
+  }
 }
 
-// ── Consulta de stock ──────────────────────────────────────────────────────
-async function loadPaletStock() {
+// ── Consulta de stock ─────────────────────────────────────────────────────
+async function loadPaletStockView() {
   const pid = document.getElementById('stock-palet').value;
   const container = document.getElementById('stock-palet-content');
   if (!pid) { container.innerHTML = ''; return; }
@@ -682,22 +768,21 @@ async function loadPaletStock() {
     container.innerHTML = `
       <div class="palet-header" style="margin-top:16px">
         <div>
-          <div class="palet-codigo">${palet ? palet.codigo : ''}</div>
-          ${palet && palet.descripcion ? `<div class="palet-desc">${palet.descripcion}</div>` : ''}
+          <div class="palet-codigo">${palet ? escHtml(palet.codigo) : ''}</div>
+          ${palet && palet.descripcion ? `<div class="palet-desc">${escHtml(palet.descripcion)}</div>` : ''}
         </div>
         <span class="badge">${totalCajas} cajas</span>
       </div>
       ${items.map(i => `
         <div class="stock-item">
           <div class="si-left">
-            <div class="si-nombre">${i.producto}</div>
-            ${i.color ? `<div class="si-color">${i.color}</div>` : ''}
+            <div class="si-nombre">${escHtml(i.producto)}</div>
+            ${i.color ? `<div class="si-color">${escHtml(i.color)}</div>` : ''}
             ${i.piezas_por_caja ? `<div class="si-ppk">${i.piezas_por_caja} pzas/caja · ${i.cajas * i.piezas_por_caja} pzas total</div>` : ''}
           </div>
           <div class="si-cajas">${i.cajas}<span>cajas</span></div>
         </div>
-      `).join('')}
-    `;
+      `).join('')}`;
   } catch(e) {
     container.innerHTML = '<div class="empty">Error cargando stock</div>';
   }
@@ -714,28 +799,28 @@ async function buscarStock() {
     const items = await r.json();
 
     if (!items.length) {
-      container.innerHTML = '<div class="empty">Sin resultados para "' + q + '"</div>';
+      container.innerHTML = `<div class="empty">Sin resultados para "${escHtml(q)}"</div>`;
       return;
     }
 
-    container.innerHTML = '<div style="margin-top:16px">' + items.map(i => `
-      <div class="search-result-item">
-        <div class="sri-row1">
-          <span class="sri-nombre">${i.producto}</span>
-          <span class="sri-cajas">${i.cajas} caj.</span>
+    container.innerHTML = '<div style="margin-top:16px">' +
+      items.map(i => `
+        <div class="search-result-item">
+          <div class="sri-row1">
+            <span class="sri-nombre">${escHtml(i.producto)}</span>
+            <span class="sri-cajas">${i.cajas} caj.</span>
+          </div>
+          <div class="sri-sub">
+            ${i.color ? escHtml(i.color) + ' · ' : ''}Palet <strong>${escHtml(i.palet_codigo)}</strong>${i.palet_desc ? ' — ' + escHtml(i.palet_desc) : ''}${i.sku ? ' · SKU ' + escHtml(i.sku) : ''}
+            ${i.piezas_por_caja ? ' · ' + i.piezas_por_caja + ' pzas/caja' : ''}
+          </div>
         </div>
-        <div class="sri-sub">
-          ${i.color ? i.color + ' · ' : ''}Palet <strong>${i.palet_codigo}</strong>${i.palet_desc ? ' — ' + i.palet_desc : ''}${i.sku ? ' · SKU ' + i.sku : ''}
-          ${i.piezas_por_caja ? ' · ' + i.piezas_por_caja + ' pzas/caja' : ''}
-        </div>
-      </div>
-    `).join('') + '</div>';
+      `).join('') + '</div>';
   } catch(e) {
     container.innerHTML = '<div class="empty">Error en la búsqueda</div>';
   }
 }
 
-// Enter en buscador de stock
 document.getElementById('stock-search').addEventListener('keydown', e => {
   if (e.key === 'Enter') buscarStock();
 });
@@ -745,14 +830,21 @@ document.getElementById('stock-search-clear').addEventListener('click', () => {
   document.getElementById('stock-search-results').innerHTML = '';
 });
 
-// ── Toast ──────────────────────────────────────────────────────────────────
+// ── Toast ─────────────────────────────────────────────────────────────────
 let _toastTimer;
-function toast(msg, type='ok') {
+function toast(msg, type = 'ok') {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'show ' + type;
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => { el.className = ''; }, 2800);
+}
+
+// ── Utilidad ──────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 </body>
