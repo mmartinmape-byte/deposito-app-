@@ -71,11 +71,14 @@ def init_db():
                 fecha            TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS productos (
-                id     SERIAL PRIMARY KEY,
-                nombre TEXT NOT NULL,
-                sku    TEXT NOT NULL,
-                color  TEXT NOT NULL DEFAULT '',
-                costo  NUMERIC NOT NULL DEFAULT 0,
+                id              SERIAL PRIMARY KEY,
+                nombre          TEXT NOT NULL,
+                sku             TEXT NOT NULL,
+                color           TEXT NOT NULL DEFAULT '',
+                costo           NUMERIC NOT NULL DEFAULT 0,
+                stock_separado  INTEGER NOT NULL DEFAULT 0,
+                stock_full      INTEGER NOT NULL DEFAULT 0,
+                ventas_mes      INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(sku, color)
             )""",
         ]
@@ -108,11 +111,14 @@ def init_db():
                 fecha            TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS productos (
-                id     INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL,
-                sku    TEXT NOT NULL COLLATE NOCASE,
-                color  TEXT NOT NULL DEFAULT '',
-                costo  REAL NOT NULL DEFAULT 0,
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre         TEXT NOT NULL,
+                sku            TEXT NOT NULL COLLATE NOCASE,
+                color          TEXT NOT NULL DEFAULT '',
+                costo          REAL NOT NULL DEFAULT 0,
+                stock_separado INTEGER NOT NULL DEFAULT 0,
+                stock_full     INTEGER NOT NULL DEFAULT 0,
+                ventas_mes     INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(sku, color)
             )""",
         ]
@@ -190,22 +196,36 @@ def migrate_db():
     except Exception as ex:
         print(f'  Aviso migración: {ex}')
 
-    # Migración: columna costo en productos
+    # Migración: columnas de proyecciones en productos
+    _nuevas_pg = [
+        ('costo',          'NUMERIC NOT NULL DEFAULT 0'),
+        ('stock_separado', 'INTEGER NOT NULL DEFAULT 0'),
+        ('stock_full',     'INTEGER NOT NULL DEFAULT 0'),
+        ('ventas_mes',     'INTEGER NOT NULL DEFAULT 0'),
+    ]
+    _nuevas_sq = [
+        ('costo',          'REAL    NOT NULL DEFAULT 0'),
+        ('stock_separado', 'INTEGER NOT NULL DEFAULT 0'),
+        ('stock_full',     'INTEGER NOT NULL DEFAULT 0'),
+        ('ventas_mes',     'INTEGER NOT NULL DEFAULT 0'),
+    ]
     try:
         if IS_PG:
             with engine.begin() as conn:
-                conn.execute(text(
-                    'ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo NUMERIC NOT NULL DEFAULT 0'
-                ))
+                for col, tipo in _nuevas_pg:
+                    conn.execute(text(
+                        f'ALTER TABLE productos ADD COLUMN IF NOT EXISTS {col} {tipo}'
+                    ))
         else:
             with engine.connect() as conn:
                 cols = [r[1] for r in conn.execute(text('PRAGMA table_info(productos)')).fetchall()]
-            if 'costo' not in cols:
-                with engine.begin() as conn:
-                    conn.execute(text('ALTER TABLE productos ADD COLUMN costo REAL NOT NULL DEFAULT 0'))
-                print('  Migración aplicada: columna costo en productos.')
+            for col, tipo in _nuevas_sq:
+                if col not in cols:
+                    with engine.begin() as conn:
+                        conn.execute(text(f'ALTER TABLE productos ADD COLUMN {col} {tipo}'))
+                    print(f'  Migración aplicada: columna {col} en productos.')
     except Exception as ex:
-        print(f'  Aviso migración costo: {ex}')
+        print(f'  Aviso migración proyecciones: {ex}')
 
 
 init_db()
@@ -492,6 +512,44 @@ def delete_producto(pid):
     with engine.begin() as conn:
         conn.execute(text('DELETE FROM productos WHERE id=:pid'), {'pid': pid})
     return jsonify({'ok': True})
+
+
+@app.route('/api/productos/<int:pid>/proyeccion', methods=['PATCH'])
+def update_proyeccion(pid):
+    data = request.json
+    campos = {}
+    for campo in ('stock_separado', 'stock_full', 'ventas_mes'):
+        if campo in data:
+            try:
+                campos[campo] = max(0, int(data[campo]))
+            except (TypeError, ValueError):
+                return jsonify({'error': f'{campo} inválido'}), 400
+    if not campos:
+        return jsonify({'error': 'No hay campos para actualizar'}), 400
+    set_clause = ', '.join(f'{k}=:{k}' for k in campos)
+    campos['id'] = pid
+    with engine.begin() as conn:
+        conn.execute(text(f'UPDATE productos SET {set_clause} WHERE id=:id'), campos)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/proyecciones')
+def get_proyecciones():
+    with engine.connect() as conn:
+        rows = conn.execute(text('''
+            SELECT
+                pr.id, pr.nombre, pr.sku, pr.color,
+                pr.stock_separado, pr.stock_full, pr.ventas_mes,
+                COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito
+            FROM productos pr
+            LEFT JOIN stock s
+                   ON LOWER(s.producto) = LOWER(pr.nombre)
+                  AND LOWER(s.color)    = LOWER(pr.color)
+            GROUP BY pr.id, pr.nombre, pr.sku, pr.color,
+                     pr.stock_separado, pr.stock_full, pr.ventas_mes
+            ORDER BY pr.nombre, pr.color
+        ''')).fetchall()
+    return jsonify([_row(r) for r in rows])
 
 
 @app.route('/api/productos/<int:pid>/costo', methods=['PATCH'])

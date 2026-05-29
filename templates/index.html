@@ -199,7 +199,8 @@ input:focus,select:focus{border-color:var(--blue)}
     <button onclick="goTo('movimiento',this)">+ Movimiento</button>
     <button onclick="goTo('buscar',this)">🔍 Buscar</button>
     <button onclick="goTo('historial',this)">Historial</button>
-    <button onclick="goToInventario(this)">📊 Inventario</button>
+    <button onclick="goToProtegido('inventario',this)">📊 Inventario</button>
+    <button onclick="goToProtegido('proyecciones',this)">📈 Proyecciones</button>
   </nav>
 </header>
 
@@ -388,6 +389,33 @@ input:focus,select:focus{border-color:var(--blue)}
   </div>
 </section>
 
+<!-- ─── PROYECCIONES ──────────────────────────────────────────────────────── -->
+<section id="sec-proyecciones" class="sec">
+  <div class="toolbar">
+    <div class="page-h" style="margin:0">Proyecciones de compra</div>
+    <button class="btn btn-ghost" onclick="loadProyecciones()">↻ Actualizar</button>
+  </div>
+  <div id="proy-resumen"></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th>Color</th>
+          <th>SKU</th>
+          <th style="text-align:center">Depósito<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center">Almacenamiento<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center">ML Full<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center">Total stock<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center">Ventas/mes<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center">Estado</th>
+        </tr>
+      </thead>
+      <tbody id="proy-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
 </main>
 
 <!-- ─── MODAL: Nuevo producto ─────────────────────────────────────────────── -->
@@ -484,7 +512,7 @@ function goTo(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('sec-' + id).classList.add('show');
   btn.classList.add('active');
-  ({ dashboard: loadDashboard, palets: loadPaletsTable, catalogo: loadCatalogoSection, movimiento: loadMovForm, buscar: () => document.getElementById('buscar-input').focus(), historial: loadHistorial, inventario: loadInventario })[id]?.();
+  ({ dashboard: loadDashboard, palets: loadPaletsTable, catalogo: loadCatalogoSection, movimiento: loadMovForm, buscar: () => document.getElementById('buscar-input').focus(), historial: loadHistorial, inventario: loadInventario, proyecciones: loadProyecciones })[id]?.();
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -981,13 +1009,13 @@ async function resetTodo() {
   alert('Depósito reseteado. Todo el stock fue eliminado.');
 }
 
-// ── Inventario ────────────────────────────────────────────────────────────────
+// ── Secciones protegidas (Inventario + Proyecciones) ─────────────────────────
 let _invUnlocked = false;
-let _invPendingBtn = null;
+let _pendingSec  = null;  // { secId, btn }
 
-function goToInventario(btn) {
-  if (_invUnlocked) { goTo('inventario', btn); return; }
-  _invPendingBtn = btn;
+function goToProtegido(secId, btn) {
+  if (_invUnlocked) { goTo(secId, btn); return; }
+  _pendingSec = { secId, btn };
   document.getElementById('pwd-input').value = '';
   document.getElementById('pwd-alert').classList.remove('show');
   document.getElementById('modal-pwd').classList.add('open');
@@ -996,15 +1024,15 @@ function goToInventario(btn) {
 
 function closePwdModal() {
   document.getElementById('modal-pwd').classList.remove('open');
-  _invPendingBtn = null;
+  _pendingSec = null;
 }
 
 function checkPwd() {
   if (document.getElementById('pwd-input').value === 'matias5290') {
     _invUnlocked = true;
     document.getElementById('modal-pwd').classList.remove('open');
-    if (_invPendingBtn) goTo('inventario', _invPendingBtn);
-    _invPendingBtn = null;
+    if (_pendingSec) goTo(_pendingSec.secId, _pendingSec.btn);
+    _pendingSec = null;
   } else {
     showAlert(document.getElementById('pwd-alert'), 'err', 'Contraseña incorrecta.');
   }
@@ -1073,6 +1101,104 @@ async function updateCosto(prodId, valor, inputEl) {
   if (res.ok) {
     inputEl.style.borderColor = 'var(--green)';
     setTimeout(loadInventario, 600);
+  } else {
+    inputEl.style.borderColor = 'var(--red)';
+  }
+}
+
+// ── Proyecciones ──────────────────────────────────────────────────────────────
+async function loadProyecciones() {
+  const data    = await get('/api/proyecciones');
+  const tbody   = document.getElementById('proy-tbody');
+  const resumen = document.getElementById('proy-resumen');
+
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--g400);padding:2rem">
+      No hay productos en el catálogo. Agregá productos primero en <strong>Catálogo</strong>.
+    </td></tr>`;
+    resumen.innerHTML = '';
+    return;
+  }
+
+  let criticos = 0, alertas = 0, ok = 0, sinDatos = 0;
+
+  const inpStyle = 'width:85px;padding:.3rem .45rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit;text-align:center';
+
+  tbody.innerHTML = data.map(r => {
+    const total = r.stock_deposito + r.stock_separado + r.stock_full;
+
+    let mesesTxt, estadoHtml, rowBg;
+    if (r.ventas_mes <= 0) {
+      mesesTxt  = '—';
+      estadoHtml = '<span style="color:var(--g400)">⚪ Sin datos</span>';
+      rowBg = '';
+      sinDatos++;
+    } else {
+      const meses = total / r.ventas_mes;
+      mesesTxt = meses.toFixed(1) + ' mes' + (meses !== 1 ? 'es' : '');
+      if (meses < 1) {
+        estadoHtml = `<span style="color:var(--red);font-weight:600">🔴 Crítico</span><br><small style="color:var(--g400)">${mesesTxt}</small>`;
+        rowBg = 'background:#fff8f8'; criticos++;
+      } else if (meses < 2) {
+        estadoHtml = `<span style="color:var(--orange);font-weight:600">🟡 Alerta</span><br><small style="color:var(--g400)">${mesesTxt}</small>`;
+        rowBg = 'background:#fffdf0'; alertas++;
+      } else {
+        estadoHtml = `<span style="color:var(--green);font-weight:600">🟢 OK</span><br><small style="color:var(--g400)">${mesesTxt}</small>`;
+        rowBg = ''; ok++;
+      }
+    }
+
+    const inp = (campo, val) =>
+      `<input type="number" value="${val}" min="0"
+              style="${inpStyle}"
+              onchange="updateProyeccion(${r.id},'${campo}',this.value,this)"
+              onfocus="this.style.borderColor='var(--blue)'"
+              onblur="this.style.borderColor='var(--g200)'"/>`;
+
+    return `<tr style="${rowBg}">
+      <td style="font-weight:500;color:var(--g900)">${e(r.nombre)}</td>
+      <td>${e(r.color || '—')}</td>
+      <td>${r.sku ? `<span class="badge b-transferencia">${e(r.sku)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
+      <td style="text-align:center;font-weight:600;color:var(--blue-dk)">${r.stock_deposito}</td>
+      <td style="text-align:center">${inp('stock_separado', r.stock_separado)}</td>
+      <td style="text-align:center">${inp('stock_full', r.stock_full)}</td>
+      <td style="text-align:center;font-weight:700;font-size:1rem;color:var(--blue-dk)">${total}</td>
+      <td style="text-align:center">${inp('ventas_mes', r.ventas_mes)}</td>
+      <td style="text-align:center;line-height:1.4">${estadoHtml}</td>
+    </tr>`;
+  }).join('');
+
+  resumen.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:1rem;margin-bottom:1.2rem">
+      <div class="stat" style="border-left:4px solid var(--red)">
+        <div class="stat-lbl">🔴 Crítico</div>
+        <div class="stat-val" style="color:var(--red)">${criticos}</div>
+      </div>
+      <div class="stat" style="border-left:4px solid var(--orange)">
+        <div class="stat-lbl">🟡 Alerta (1–2 meses)</div>
+        <div class="stat-val" style="color:var(--orange)">${alertas}</div>
+      </div>
+      <div class="stat" style="border-left:4px solid var(--green)">
+        <div class="stat-lbl">🟢 OK (+2 meses)</div>
+        <div class="stat-val" style="color:var(--green)">${ok}</div>
+      </div>
+      <div class="stat" style="border-left:4px solid var(--g200)">
+        <div class="stat-lbl">⚪ Sin datos de ventas</div>
+        <div class="stat-val" style="color:var(--g400)">${sinDatos}</div>
+      </div>
+    </div>`;
+}
+
+async function updateProyeccion(prodId, campo, valor, inputEl) {
+  inputEl.style.borderColor = 'var(--orange)';
+  const res = await fetch('/api/productos/' + prodId + '/proyeccion', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ [campo]: parseInt(valor) || 0 })
+  }).then(r => r.json());
+  if (res.ok) {
+    inputEl.style.borderColor = 'var(--green)';
+    setTimeout(loadProyecciones, 500);
   } else {
     inputEl.style.borderColor = 'var(--red)';
   }
