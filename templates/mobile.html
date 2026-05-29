@@ -464,7 +464,8 @@
 // ── Estado ────────────────────────────────────────────────────────────────
 let palets    = [];
 let productos = [];
-let egStockItems = [];   // items del palet seleccionado en egreso
+let egStockItems  = [];   // items del palet seleccionado en egreso
+let egSelectedIdx = -1;  // índice del item seleccionado en egreso
 
 // ── Init ──────────────────────────────────────────────────────────────────
 (async function init() {
@@ -558,7 +559,8 @@ async function onEgPaletChange() {
   document.getElementById('eg-prod-nombre').value = '';
   document.getElementById('eg-color').value = '';
   document.getElementById('eg-ppk').value = '';
-  egStockItems = [];
+  egStockItems  = [];
+  egSelectedIdx = -1;
 
   if (!pid) {
     container.innerHTML = '<div class="eg-no-palet">Elegí un palet para ver los productos disponibles</div>';
@@ -582,31 +584,31 @@ async function onEgPaletChange() {
 }
 
 function renderEgProductList(container) {
-  const selectedNombre = document.getElementById('eg-prod-nombre').value;
-  const selectedColor  = document.getElementById('eg-color').value;
-
   container.innerHTML = '<div class="eg-prod-list-wrap">' +
     egStockItems.map((item, idx) => {
-      const isSelected = item.producto === selectedNombre && item.color === selectedColor;
+      const isSelected = idx === egSelectedIdx;
+      const subItems = [];
+      if (item.color) subItems.push(escHtml(item.color));
+      if (item.piezas_por_caja) subItems.push(`${item.piezas_por_caja} pzas/caja`);
       return `
         <div class="eg-prod-item${isSelected ? ' selected' : ''}" data-idx="${idx}">
           <div class="epi-left">
             <div class="epi-nombre">${escHtml(item.producto)}</div>
-            ${item.color ? `<div class="epi-color">${escHtml(item.color)}</div>` : ''}
+            ${subItems.length ? `<div class="epi-color">${subItems.join(' · ')}</div>` : ''}
           </div>
           <div class="epi-cajas">${item.cajas}<span>cajas</span></div>
         </div>`;
     }).join('') + '</div>';
 
-  // Event listeners en cada ítem (evita problemas con comillas en nombres)
   container.querySelectorAll('.eg-prod-item').forEach(el => {
     el.addEventListener('click', () => {
       const idx  = parseInt(el.dataset.idx);
       const item = egStockItems[idx];
+      egSelectedIdx = idx;
       document.getElementById('eg-prod-nombre').value = item.producto;
       document.getElementById('eg-color').value       = item.color || '';
       document.getElementById('eg-ppk').value         = item.piezas_por_caja || 0;
-      renderEgProductList(container); // re-render para marcar seleccionado
+      renderEgProductList(container);
     });
   });
 }
@@ -743,7 +745,8 @@ function resetForm(tipo) {
     document.getElementById('eg-ppk').value = '';
     document.getElementById('eg-cajas').value = '';
     document.getElementById('eg-obs').value = '';
-    egStockItems = [];
+    egStockItems  = [];
+    egSelectedIdx = -1;
   }
 }
 
