@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from sqlalchemy import create_engine, text, event
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import os
 
 app = Flask(__name__)
@@ -32,8 +32,10 @@ if not IS_PG:
         cur.close()
 
 
+ARG = timezone(timedelta(hours=-3))  # UTC-3 Argentina
+
 def _now():
-    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    return datetime.now(ARG).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def _row(r):
