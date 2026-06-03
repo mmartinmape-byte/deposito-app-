@@ -1,8 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect
 from sqlalchemy import create_engine, text, event
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
-import os
+import os, requests as req_lib
 
 app = Flask(__name__)
 
@@ -228,6 +228,26 @@ def migrate_db():
                     print(f'  Migración aplicada: columna {col} en productos.')
     except Exception as ex:
         print(f'  Aviso migración proyecciones: {ex}')
+
+    # Tabla ml_config para guardar tokens de ML
+    try:
+        with engine.begin() as conn:
+            if IS_PG:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ml_config (
+                        key   TEXT PRIMARY KEY,
+                        value TEXT
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ml_config (
+                        key   TEXT PRIMARY KEY,
+                        value TEXT
+                    )
+                """))
+    except Exception as ex:
+        print(f'  Aviso migración ml_config: {ex}')
 
 
 init_db()
@@ -627,6 +647,134 @@ def reset_todo():
         conn.execute(text('DELETE FROM stock'))
         conn.execute(text('DELETE FROM palets'))
     return jsonify({'ok': True})
+
+
+# ── Mercado Libre ─────────────────────────────────────────────────────────────
+ML_CLIENT_ID     = os.environ.get('ML_CLIENT_ID', '8410291723054980')
+ML_CLIENT_SECRET = os.environ.get('ML_CLIENT_SECRET', 'T1aVi99e0NSgdjHjGQQiwBWho3X6gImM')
+ML_REDIRECT_URI  = 'https://deposito-app-production.up.railway.app/ml/callback'
+ML_TOKEN_URL     = 'https://api.mercadolibre.com/oauth/token'
+
+# Tokens en memoria (se pierden al reiniciar, pero se renuevan solos)
+_ml_tokens = {'access': None, 'refresh': None, 'expires_at': 0}
+
+def ml_get_token_from_code(code):
+    r = req_lib.post(ML_TOKEN_URL, data={
+        'grant_type': 'authorization_code',
+        'client_id': ML_CLIENT_ID,
+        'client_secret': ML_CLIENT_SECRET,
+        'code': code,
+        'redirect_uri': ML_REDIRECT_URI,
+    })
+    data = r.json()
+    _ml_tokens['access']     = data.get('access_token')
+    _ml_tokens['refresh']    = data.get('refresh_token')
+    _ml_tokens['expires_at'] = datetime.now().timestamp() + data.get('expires_in', 21600) - 300
+    # Guardar refresh token en DB para sobrevivir reinicios
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO ml_config (key, value) VALUES ('refresh_token', :v)
+            ON CONFLICT (key) DO UPDATE SET value=:v
+        """), {'v': _ml_tokens['refresh']})
+    return _ml_tokens['access']
+
+def ml_refresh():
+    refresh = _ml_tokens.get('refresh')
+    if not refresh:
+        # Intentar cargar desde DB
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(text("SELECT value FROM ml_config WHERE key='refresh_token'")).fetchone()
+                if row:
+                    refresh = row[0]
+                    _ml_tokens['refresh'] = refresh
+        except Exception:
+            pass
+    if not refresh:
+        return None
+    r = req_lib.post(ML_TOKEN_URL, data={
+        'grant_type': 'refresh_token',
+        'client_id': ML_CLIENT_ID,
+        'client_secret': ML_CLIENT_SECRET,
+        'refresh_token': refresh,
+    })
+    data = r.json()
+    _ml_tokens['access']     = data.get('access_token')
+    _ml_tokens['refresh']    = data.get('refresh_token')
+    _ml_tokens['expires_at'] = datetime.now().timestamp() + data.get('expires_in', 21600) - 300
+    if _ml_tokens['refresh']:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO ml_config (key, value) VALUES ('refresh_token', :v)
+                ON CONFLICT (key) DO UPDATE SET value=:v
+            """), {'v': _ml_tokens['refresh']})
+    return _ml_tokens['access']
+
+def ml_token():
+    if _ml_tokens['access'] and datetime.now().timestamp() < _ml_tokens['expires_at']:
+        return _ml_tokens['access']
+    return ml_refresh()
+
+@app.route('/ml/callback')
+def ml_callback():
+    code = request.args.get('code')
+    if not code:
+        return 'Error: no se recibió código de ML.', 400
+    try:
+        ml_get_token_from_code(code)
+        return redirect('/?ml=ok')
+    except Exception as e:
+        return f'Error al obtener token: {e}', 500
+
+@app.route('/api/ml/ventas')
+def ml_ventas():
+    """Devuelve ventas de los últimos 30 días agrupadas por SKU."""
+    token = ml_token()
+    if not token:
+        return jsonify({'error': 'No autorizado. Reconectá ML.', 'auth_url':
+            f'https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id={ML_CLIENT_ID}&redirect_uri={ML_REDIRECT_URI}'}), 401
+
+    # Obtener seller_id
+    me = req_lib.get('https://api.mercadolibre.com/users/me',
+                     headers={'Authorization': f'Bearer {token}'}).json()
+    seller_id = me.get('id')
+    if not seller_id:
+        return jsonify({'error': 'No se pudo obtener el seller ID'}), 500
+
+    # Fecha desde (30 días atrás)
+    desde = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%dT00:00:00.000-03:00')
+
+    # Traer órdenes paginadas
+    ventas_sku = {}
+    offset = 0
+    while True:
+        url = (f'https://api.mercadolibre.com/orders/search'
+               f'?seller={seller_id}&order.date_created.from={desde}'
+               f'&order.status=paid&limit=50&offset={offset}')
+        resp = req_lib.get(url, headers={'Authorization': f'Bearer {token}'}).json()
+        ordenes = resp.get('results', [])
+        if not ordenes:
+            break
+        for orden in ordenes:
+            for item in orden.get('order_items', []):
+                sku = item.get('item', {}).get('seller_sku') or ''
+                qty = item.get('quantity', 0)
+                titulo = item.get('item', {}).get('title', '')
+                if sku:
+                    if sku not in ventas_sku:
+                        ventas_sku[sku] = {'sku': sku, 'titulo': titulo, 'vendidos': 0}
+                    ventas_sku[sku]['vendidos'] += qty
+        total = resp.get('paging', {}).get('total', 0)
+        offset += 50
+        if offset >= total:
+            break
+
+    return jsonify(list(ventas_sku.values()))
+
+@app.route('/api/ml/status')
+def ml_status():
+    token = ml_token()
+    return jsonify({'conectado': bool(token)})
 
 
 if __name__ == '__main__':
