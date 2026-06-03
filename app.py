@@ -743,12 +743,16 @@ def ml_ventas():
 
     desde = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%dT00:00:00.000-03:00')
 
+    # Probar con ambos seller IDs (MATIAS5290 y TAMARA2807/BROTHERS HOME)
+    seller_ids = list({seller_id, 192421371})
+
     # Acumular ventas por item_id
     ventas_item = {}
-    offset = 0
-    while True:
+    for sid in seller_ids:
+      offset = 0
+      while True:
         url = (f'https://api.mercadolibre.com/orders/search'
-               f'?seller={seller_id}&order.date_created.from={desde}'
+               f'?seller={sid}&order.date_created.from={desde}'
                f'&order.status=paid&limit=50&offset={offset}')
         resp = req_lib.get(url, headers={'Authorization': f'Bearer {token}'}).json()
         ordenes = resp.get('results', [])
@@ -777,6 +781,7 @@ def ml_ventas():
             break
 
     # Si algún item no tiene SKU, intentar leerlo desde la API de items
+
     items_sin_sku = [v['item_id'] for v in ventas_item.values() if not v['sku']]
     for i in range(0, len(items_sin_sku), 20):
         batch = items_sin_sku[i:i+20]
@@ -809,9 +814,10 @@ def ml_match_debug():
     seller_id = me.get('id')
     desde = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%dT00:00:00.000-03:00')
     ventas_item = {}
-    offset = 0
-    while True:
-        url = (f'https://api.mercadolibre.com/orders/search?seller={seller_id}'
+    for sid in list({seller_id, 192421371}):
+      offset = 0
+      while True:
+        url = (f'https://api.mercadolibre.com/orders/search?seller={sid}'
                f'&order.date_created.from={desde}&order.status=paid&limit=50&offset={offset}')
         resp = req_lib.get(url, headers={'Authorization': f'Bearer {token}'}).json()
         ordenes = resp.get('results', [])
@@ -823,7 +829,7 @@ def ml_match_debug():
                 sku = (d.get('seller_sku') or d.get('seller_custom_field') or
                        item.get('seller_sku') or '').strip()
                 if iid not in ventas_item:
-                    ventas_item[iid] = {'item_id':iid,'sku':sku,'titulo':d.get('title',''),'vendidos':0,'raw_keys':list(item.keys())}
+                    ventas_item[iid] = {'item_id':iid,'sku':sku,'titulo':d.get('title',''),'vendidos':0,'seller_id':sid}
                 ventas_item[iid]['vendidos'] += item.get('quantity',0)
         total = resp.get('paging',{}).get('total',0)
         offset += 50
