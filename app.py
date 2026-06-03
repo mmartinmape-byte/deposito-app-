@@ -776,6 +776,35 @@ def ml_status():
     token = ml_token()
     return jsonify({'conectado': bool(token)})
 
+@app.route('/api/ml/debug')
+def ml_debug():
+    """Endpoint de diagnóstico: muestra las primeras órdenes y sus items crudos."""
+    token = ml_token()
+    if not token:
+        return jsonify({'error': 'No autorizado'}), 401
+    me = req_lib.get('https://api.mercadolibre.com/users/me',
+                     headers={'Authorization': f'Bearer {token}'}).json()
+    seller_id = me.get('id')
+    desde = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%dT00:00:00.000-03:00')
+    url = (f'https://api.mercadolibre.com/orders/search'
+           f'?seller={seller_id}&order.date_created.from={desde}'
+           f'&order.status=paid&limit=3&offset=0')
+    resp = req_lib.get(url, headers={'Authorization': f'Bearer {token}'}).json()
+    total = resp.get('paging', {}).get('total', 0)
+    ordenes = resp.get('results', [])
+    muestra = []
+    for o in ordenes:
+        for it in o.get('order_items', []):
+            muestra.append({
+                'order_id': o.get('id'),
+                'item_id': it.get('item', {}).get('id'),
+                'title': it.get('item', {}).get('title'),
+                'seller_sku': it.get('item', {}).get('seller_sku'),
+                'seller_custom_field': it.get('item', {}).get('seller_custom_field'),
+                'quantity': it.get('quantity'),
+            })
+    return jsonify({'seller_id': seller_id, 'total_ordenes_30d': total, 'muestra': muestra})
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
