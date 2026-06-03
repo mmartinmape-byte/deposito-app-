@@ -803,17 +803,22 @@ def ml_debug():
                 'seller_custom_field': it.get('item', {}).get('seller_custom_field'),
                 'quantity': it.get('quantity'),
             })
-    # También mostrar detalle del primer item para ver atributos y SKU
+    # Mostrar detalle del primer item - respuesta completa para diagnóstico
     item_detalle = {}
     if muestra:
         item_id = muestra[0]['item_id']
-        det = req_lib.get(f'https://api.mercadolibre.com/items/{item_id}',
-                          headers={'Authorization': f'Bearer {token}'}).json()
+        r_item = req_lib.get(f'https://api.mercadolibre.com/items/{item_id}?include_attributes=all',
+                          headers={'Authorization': f'Bearer {token}'})
+        det = r_item.json()
         item_detalle = {
+            'status_code': r_item.status_code,
             'id': det.get('id'),
             'title': det.get('title'),
             'seller_custom_field': det.get('seller_custom_field'),
-            'attributes': [a for a in det.get('attributes', []) if 'sku' in a.get('id','').lower() or 'sku' in a.get('name','').lower()],
+            'error': det.get('error'),
+            'message': det.get('message'),
+            'attributes_count': len(det.get('attributes', [])),
+            'attributes_sample': det.get('attributes', [])[:5],
         }
     return jsonify({'seller_id': seller_id, 'total_ordenes_30d': total, 'muestra': muestra, 'item_detalle': item_detalle})
 
