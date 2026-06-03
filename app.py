@@ -803,7 +803,19 @@ def ml_debug():
                 'seller_custom_field': it.get('item', {}).get('seller_custom_field'),
                 'quantity': it.get('quantity'),
             })
-    return jsonify({'seller_id': seller_id, 'total_ordenes_30d': total, 'muestra': muestra})
+    # También mostrar detalle del primer item para ver atributos y SKU
+    item_detalle = {}
+    if muestra:
+        item_id = muestra[0]['item_id']
+        det = req_lib.get(f'https://api.mercadolibre.com/items/{item_id}',
+                          headers={'Authorization': f'Bearer {token}'}).json()
+        item_detalle = {
+            'id': det.get('id'),
+            'title': det.get('title'),
+            'seller_custom_field': det.get('seller_custom_field'),
+            'attributes': [a for a in det.get('attributes', []) if 'sku' in a.get('id','').lower() or 'sku' in a.get('name','').lower()],
+        }
+    return jsonify({'seller_id': seller_id, 'total_ordenes_30d': total, 'muestra': muestra, 'item_detalle': item_detalle})
 
 
 if __name__ == '__main__':
