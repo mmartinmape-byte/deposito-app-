@@ -728,24 +728,23 @@ def ml_callback():
 
 @app.route('/api/ml/ventas')
 def ml_ventas():
-    """Devuelve ventas de los últimos 30 días agrupadas por SKU."""
+    """Devuelve ventas de los últimos 30 días. Cruza por SKU si está disponible,
+    sino agrupa por item_id+titulo para matching por título en el frontend."""
     token = ml_token()
     if not token:
         return jsonify({'error': 'No autorizado. Reconectá ML.', 'auth_url':
             f'https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id={ML_CLIENT_ID}&redirect_uri={ML_REDIRECT_URI}'}), 401
 
-    # Obtener seller_id
     me = req_lib.get('https://api.mercadolibre.com/users/me',
                      headers={'Authorization': f'Bearer {token}'}).json()
     seller_id = me.get('id')
     if not seller_id:
         return jsonify({'error': 'No se pudo obtener el seller ID'}), 500
 
-    # Fecha desde (30 días atrás)
     desde = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%dT00:00:00.000-03:00')
 
-    # Traer órdenes paginadas
-    ventas_sku = {}
+    # Acumular ventas por item_id
+    ventas_item = {}
     offset = 0
     while True:
         url = (f'https://api.mercadolibre.com/orders/search'
@@ -757,19 +756,38 @@ def ml_ventas():
             break
         for orden in ordenes:
             for item in orden.get('order_items', []):
-                sku = item.get('item', {}).get('seller_sku') or ''
+                item_data = item.get('item', {})
+                item_id = item_data.get('id', '')
+                sku = (item_data.get('seller_sku') or '').strip()
+                titulo = item_data.get('title', '')
                 qty = item.get('quantity', 0)
-                titulo = item.get('item', {}).get('title', '')
-                if sku:
-                    if sku not in ventas_sku:
-                        ventas_sku[sku] = {'sku': sku, 'titulo': titulo, 'vendidos': 0}
-                    ventas_sku[sku]['vendidos'] += qty
+                key = item_id
+                if key not in ventas_item:
+                    ventas_item[key] = {'item_id': item_id, 'sku': sku, 'titulo': titulo, 'vendidos': 0}
+                ventas_item[key]['vendidos'] += qty
+                if sku and not ventas_item[key]['sku']:
+                    ventas_item[key]['sku'] = sku
         total = resp.get('paging', {}).get('total', 0)
         offset += 50
         if offset >= total:
             break
 
-    return jsonify(list(ventas_sku.values()))
+    # Si algún item no tiene SKU, intentar leerlo desde la API de items
+    items_sin_sku = [v['item_id'] for v in ventas_item.values() if not v['sku']]
+    for i in range(0, len(items_sin_sku), 20):
+        batch = items_sin_sku[i:i+20]
+        ids_str = ','.join(batch)
+        r = req_lib.get(f'https://api.mercadolibre.com/items?ids={ids_str}&attributes=id,seller_custom_field',
+                        headers={'Authorization': f'Bearer {token}'})
+        if r.status_code == 200:
+            for entry in r.json():
+                body = entry.get('body', {})
+                iid  = body.get('id', '')
+                scf  = (body.get('seller_custom_field') or '').strip()
+                if iid in ventas_item and scf:
+                    ventas_item[iid]['sku'] = scf
+
+    return jsonify(list(ventas_item.values()))
 
 @app.route('/api/ml/status')
 def ml_status():

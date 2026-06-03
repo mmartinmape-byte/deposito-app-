@@ -1141,9 +1141,19 @@ async function syncML() {
       return;
     }
     mlVentasMap = {};
-    data.forEach(v => { mlVentasMap[v.sku.toUpperCase()] = v.vendidos; });
+    let conSku = 0, porTitulo = 0;
+    data.forEach(v => {
+      if (v.sku) {
+        mlVentasMap['SKU:' + v.sku.toUpperCase()] = (mlVentasMap['SKU:' + v.sku.toUpperCase()] || 0) + v.vendidos;
+        conSku++;
+      } else {
+        // Guardar por título para matching aproximado
+        mlVentasMap['TITULO:' + v.titulo.toUpperCase()] = (mlVentasMap['TITULO:' + v.titulo.toUpperCase()] || 0) + v.vendidos;
+        porTitulo++;
+      }
+    });
     await loadProyecciones();
-    alert(`✅ Sincronizado. ${data.length} SKUs con ventas en los últimos 30 días.`);
+    alert(`✅ Sincronizado. ${conSku} items con SKU, ${porTitulo} cruzados por título.`);
   } catch(err) {
     alert('Error al sincronizar: ' + err);
   } finally {
@@ -1201,9 +1211,22 @@ async function loadProyecciones() {
               onfocus="this.style.borderColor='var(--blue)'"
               onblur="this.style.borderColor='var(--g200)'"/>`;
 
+    // Cruce por SKU primero, sino por título
     const skuKey = (r.sku || '').toUpperCase();
-    const ventasML = skuKey && mlVentasMap[skuKey] != null
-      ? `<span style="font-weight:700;color:#7c3aed">${mlVentasMap[skuKey]}</span>`
+    let ventasMLNum = null;
+    if (skuKey && mlVentasMap['SKU:' + skuKey] != null) {
+      ventasMLNum = mlVentasMap['SKU:' + skuKey];
+    } else {
+      // Buscar por título: ver si alguna clave TITULO contiene el nombre del producto
+      const nombre = r.nombre.toUpperCase();
+      for (const [k, v] of Object.entries(mlVentasMap)) {
+        if (k.startsWith('TITULO:') && k.includes(nombre)) {
+          ventasMLNum = (ventasMLNum || 0) + v;
+        }
+      }
+    }
+    const ventasML = ventasMLNum != null
+      ? `<span style="font-weight:700;color:#7c3aed">${ventasMLNum}</span>`
       : '<span style="color:var(--g400)">—</span>';
 
     return `<tr style="${rowBg}">
