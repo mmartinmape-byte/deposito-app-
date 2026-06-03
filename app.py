@@ -780,20 +780,28 @@ def ml_ventas():
         if offset >= total:
             break
 
-    # Leer SKU actual desde las publicaciones (sobreescribe SKU viejo de las órdenes)
+    # Leer SKU real desde atributo SELLER_SKU de las publicaciones
     todos_item_ids = list(ventas_item.keys())
     for i in range(0, len(todos_item_ids), 20):
         batch = todos_item_ids[i:i+20]
         ids_str = ','.join(batch)
-        r = req_lib.get(f'https://api.mercadolibre.com/items?ids={ids_str}&attributes=id,seller_custom_field',
+        r = req_lib.get(f'https://api.mercadolibre.com/items?ids={ids_str}&attributes=id,seller_custom_field,attributes',
                         headers={'Authorization': f'Bearer {token}'})
         if r.status_code == 200:
             for entry in r.json():
                 body = entry.get('body', {})
                 iid = body.get('id', '')
-                scf = (body.get('seller_custom_field') or '').strip()
-                if iid in ventas_item and scf:
-                    ventas_item[iid]['sku'] = scf  # SKU actual de la publicacion
+                if iid not in ventas_item:
+                    continue
+                # Buscar atributo SELLER_SKU
+                sku_from_attr = ''
+                for attr in body.get('attributes', []):
+                    if attr.get('id') == 'SELLER_SKU':
+                        sku_from_attr = (attr.get('value_name') or '').strip()
+                        break
+                final_sku = sku_from_attr or (body.get('seller_custom_field') or '').strip()
+                if final_sku:
+                    ventas_item[iid]['sku'] = final_sku
 
     return jsonify(list(ventas_item.values()))
 
@@ -834,19 +842,26 @@ def ml_match_debug():
         offset += 50
         if offset >= total: break
 
-    # Leer SKU actual desde publicaciones (sobreescribe SKU viejo de órdenes)
+    # Leer SKU real desde atributo SELLER_SKU de las publicaciones
     todos_ids = list(ventas_item.keys())
     for i in range(0, len(todos_ids), 20):
         batch = todos_ids[i:i+20]
-        r2 = req_lib.get(f'https://api.mercadolibre.com/items?ids={",".join(batch)}&attributes=id,seller_custom_field',
+        r2 = req_lib.get(f'https://api.mercadolibre.com/items?ids={",".join(batch)}&attributes=id,seller_custom_field,attributes',
                          headers={'Authorization': f'Bearer {token}'})
         if r2.status_code == 200:
             for entry in r2.json():
                 body = entry.get('body', {})
                 iid = body.get('id', '')
-                scf = (body.get('seller_custom_field') or '').strip()
-                if iid in ventas_item and scf:
-                    ventas_item[iid]['sku'] = scf
+                if iid not in ventas_item:
+                    continue
+                sku_from_attr = ''
+                for attr in body.get('attributes', []):
+                    if attr.get('id') == 'SELLER_SKU':
+                        sku_from_attr = (attr.get('value_name') or '').strip()
+                        break
+                final_sku = sku_from_attr or (body.get('seller_custom_field') or '').strip()
+                if final_sku:
+                    ventas_item[iid]['sku'] = final_sku
 
     ventas = list(ventas_item.values())
 
