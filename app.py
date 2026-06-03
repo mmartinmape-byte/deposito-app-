@@ -758,7 +758,11 @@ def ml_ventas():
             for item in orden.get('order_items', []):
                 item_data = item.get('item', {})
                 item_id = item_data.get('id', '')
-                sku = (item_data.get('seller_sku') or '').strip()
+                # ML devuelve el SKU en distintos campos según el tipo de publicación
+                sku = (item_data.get('seller_sku') or
+                       item_data.get('seller_custom_field') or
+                       item.get('seller_sku') or
+                       item.get('item', {}).get('seller_custom_field') or '').strip()
                 titulo = item_data.get('title', '')
                 qty = item.get('quantity', 0)
                 key = item_id
@@ -816,8 +820,10 @@ def ml_match_debug():
             for item in orden.get('order_items', []):
                 d = item.get('item', {})
                 iid = d.get('id','')
+                sku = (d.get('seller_sku') or d.get('seller_custom_field') or
+                       item.get('seller_sku') or '').strip()
                 if iid not in ventas_item:
-                    ventas_item[iid] = {'item_id':iid,'sku':(d.get('seller_sku') or '').strip(),'titulo':d.get('title',''),'vendidos':0}
+                    ventas_item[iid] = {'item_id':iid,'sku':sku,'titulo':d.get('title',''),'vendidos':0,'raw_keys':list(item.keys())}
                 ventas_item[iid]['vendidos'] += item.get('quantity',0)
         total = resp.get('paging',{}).get('total',0)
         offset += 50
