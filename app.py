@@ -746,8 +746,8 @@ def ml_ventas():
     # Probar con ambos seller IDs (MATIAS5290 y TAMARA2807/BROTHERS HOME)
     seller_ids = list({seller_id, 192421371})
 
-    # Acumular ventas por item_id
-    ventas_item = {}
+    # Acumular ventas por (item_id, variation_id) — clave única por variante
+    ventas_item = {}  # key = "item_id|variation_id"
     for sid in seller_ids:
       offset = 0
       while True:
@@ -762,48 +762,93 @@ def ml_ventas():
             for item in orden.get('order_items', []):
                 item_data = item.get('item', {})
                 item_id = item_data.get('id', '')
-                # ML devuelve el SKU en distintos campos según el tipo de publicación
-                sku = (item_data.get('seller_sku') or
-                       item_data.get('seller_custom_field') or
-                       item.get('seller_sku') or
-                       item.get('item', {}).get('seller_custom_field') or '').strip()
+                variation_id = str(item_data.get('variation_id') or '')
                 titulo = item_data.get('title', '')
                 qty = item.get('quantity', 0)
-                key = item_id
+                key = f"{item_id}|{variation_id}"
                 if key not in ventas_item:
-                    ventas_item[key] = {'item_id': item_id, 'sku': sku, 'titulo': titulo, 'vendidos': 0}
+                    ventas_item[key] = {
+                        'item_id': item_id,
+                        'variation_id': variation_id,
+                        'sku': '',
+                        'titulo': titulo,
+                        'vendidos': 0
+                    }
                 ventas_item[key]['vendidos'] += qty
-                if sku and not ventas_item[key]['sku']:
-                    ventas_item[key]['sku'] = sku
         total = resp.get('paging', {}).get('total', 0)
         offset += 50
         if offset >= total:
             break
 
-    # Leer SKU real desde atributo SELLER_SKU de las publicaciones
-    todos_item_ids = list(ventas_item.keys())
-    for i in range(0, len(todos_item_ids), 20):
-        batch = todos_item_ids[i:i+20]
-        ids_str = ','.join(batch)
-        r = req_lib.get(f'https://api.mercadolibre.com/items?ids={ids_str}&attributes=id,seller_custom_field,attributes',
-                        headers={'Authorization': f'Bearer {token}'})
-        if r.status_code == 200:
-            for entry in r.json():
-                body = entry.get('body', {})
-                iid = body.get('id', '')
-                if iid not in ventas_item:
-                    continue
-                # Buscar atributo SELLER_SKU
-                sku_from_attr = ''
-                for attr in body.get('attributes', []):
-                    if attr.get('id') == 'SELLER_SKU':
-                        sku_from_attr = (attr.get('value_name') or '').strip()
-                        break
-                final_sku = sku_from_attr or (body.get('seller_custom_field') or '').strip()
-                if final_sku:
-                    ventas_item[iid]['sku'] = final_sku
+    # Leer SKU desde atributo SELLER_SKU — a nivel item Y a nivel variante
+    items_unicos = list({v['item_id'] for v in ventas_item.values()})
+    # Mapa variation_id -> sku
+    variation_sku_map = {}
+    # Mapa item_id -> sku (para items sin variantes)
+    item_sku_map = {}
 
-    return jsonify(list(ventas_item.values()))
+    for i in range(0, len(items_unicos), 20):
+        batch = items_unicos[i:i+20]
+        ids_str = ','.join(batch)
+        r = req_lib.get(
+            f'https://api.mercadolibre.com/items?ids={ids_str}&attributes=id,seller_custom_field,attributes,variations',
+            headers={'Authorization': f'Bearer {token}'}
+        )
+        if r.status_code != 200:
+            continue
+        for entry in r.json():
+            body = entry.get('body', {})
+            iid = body.get('id', '')
+
+            # SKU a nivel item
+            item_sku = ''
+            for attr in body.get('attributes', []):
+                if attr.get('id') == 'SELLER_SKU':
+                    item_sku = (attr.get('value_name') or '').strip()
+                    break
+            if not item_sku:
+                item_sku = (body.get('seller_custom_field') or '').strip()
+            if item_sku:
+                item_sku_map[iid] = item_sku
+
+            # SKU a nivel variante
+            for var in body.get('variations', []):
+                vid = str(var.get('id', ''))
+                var_sku = ''
+                for attr in var.get('attribute_combinations', []):
+                    if attr.get('id') == 'SELLER_SKU':
+                        var_sku = (attr.get('value_name') or '').strip()
+                        break
+                if not var_sku:
+                    for attr in body.get('attributes', []):
+                        if attr.get('id') == 'SELLER_SKU':
+                            var_sku = (attr.get('value_name') or '').strip()
+                            break
+                if var_sku:
+                    variation_sku_map[vid] = var_sku
+                elif item_sku:
+                    variation_sku_map[vid] = item_sku
+
+    # Asignar SKU final a cada entrada
+    for key, v in ventas_item.items():
+        vid = v['variation_id']
+        iid = v['item_id']
+        if vid and vid in variation_sku_map:
+            v['sku'] = variation_sku_map[vid]
+        elif iid in item_sku_map:
+            v['sku'] = item_sku_map[iid]
+
+    # Agrupar por SKU (sumar vendidos de distintas variantes con mismo SKU)
+    por_sku = {}
+    for v in ventas_item.values():
+        sku = v['sku']
+        if not sku:
+            sku = f"_nosku_{v['item_id']}"
+        if sku not in por_sku:
+            por_sku[sku] = {'sku': v['sku'], 'titulo': v['titulo'], 'vendidos': 0}
+        por_sku[sku]['vendidos'] += v['vendidos']
+
+    return jsonify(list(por_sku.values()))
 
 @app.route('/api/ml/match-debug')
 def ml_match_debug():
