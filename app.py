@@ -780,21 +780,20 @@ def ml_ventas():
         if offset >= total:
             break
 
-    # Si algún item no tiene SKU, intentar leerlo desde la API de items
-
-    items_sin_sku = [v['item_id'] for v in ventas_item.values() if not v['sku']]
-    for i in range(0, len(items_sin_sku), 20):
-        batch = items_sin_sku[i:i+20]
+    # Leer SKU actual desde las publicaciones (sobreescribe SKU viejo de las órdenes)
+    todos_item_ids = list(ventas_item.keys())
+    for i in range(0, len(todos_item_ids), 20):
+        batch = todos_item_ids[i:i+20]
         ids_str = ','.join(batch)
         r = req_lib.get(f'https://api.mercadolibre.com/items?ids={ids_str}&attributes=id,seller_custom_field',
                         headers={'Authorization': f'Bearer {token}'})
         if r.status_code == 200:
             for entry in r.json():
                 body = entry.get('body', {})
-                iid  = body.get('id', '')
-                scf  = (body.get('seller_custom_field') or '').strip()
+                iid = body.get('id', '')
+                scf = (body.get('seller_custom_field') or '').strip()
                 if iid in ventas_item and scf:
-                    ventas_item[iid]['sku'] = scf
+                    ventas_item[iid]['sku'] = scf  # SKU actual de la publicacion
 
     return jsonify(list(ventas_item.values()))
 
@@ -834,6 +833,20 @@ def ml_match_debug():
         total = resp.get('paging',{}).get('total',0)
         offset += 50
         if offset >= total: break
+
+    # Leer SKU actual desde publicaciones (sobreescribe SKU viejo de órdenes)
+    todos_ids = list(ventas_item.keys())
+    for i in range(0, len(todos_ids), 20):
+        batch = todos_ids[i:i+20]
+        r2 = req_lib.get(f'https://api.mercadolibre.com/items?ids={",".join(batch)}&attributes=id,seller_custom_field',
+                         headers={'Authorization': f'Bearer {token}'})
+        if r2.status_code == 200:
+            for entry in r2.json():
+                body = entry.get('body', {})
+                iid = body.get('id', '')
+                scf = (body.get('seller_custom_field') or '').strip()
+                if iid in ventas_item and scf:
+                    ventas_item[iid]['sku'] = scf
 
     ventas = list(ventas_item.values())
 
