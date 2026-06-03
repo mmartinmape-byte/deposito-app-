@@ -393,7 +393,11 @@ input:focus,select:focus{border-color:var(--blue)}
 <section id="sec-proyecciones" class="sec">
   <div class="toolbar">
     <div class="page-h" style="margin:0">Proyecciones de compra</div>
-    <button class="btn btn-ghost" onclick="loadProyecciones()">↻ Actualizar</button>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <span id="ml-status-badge" style="font-size:.78rem;padding:3px 10px;border-radius:20px;background:#f3f4f6;color:#6b7280"></span>
+      <button class="btn btn-ghost" id="btn-ml-sync" onclick="syncML()" title="Traer ventas ML últimos 30 días">🛒 Sincronizar ML</button>
+      <button class="btn btn-ghost" onclick="loadProyecciones()">↻ Actualizar</button>
+    </div>
   </div>
   <div id="proy-resumen"></div>
   <div class="table-wrap">
@@ -407,6 +411,7 @@ input:focus,select:focus{border-color:var(--blue)}
           <th style="text-align:center">Almacenamiento<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
           <th style="text-align:center">ML Full<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
           <th style="text-align:center">Total stock<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center">Ventas ML<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(últ. 30 días)</span></th>
           <th style="text-align:center">Ventas/mes<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
           <th style="text-align:center">Estado</th>
         </tr>
@@ -1106,14 +1111,55 @@ async function updateCosto(prodId, valor, inputEl) {
   }
 }
 
+// ── ML Sync ───────────────────────────────────────────────────────────────────
+let mlVentasMap = {}; // sku -> vendidos
+
+async function checkMLStatus() {
+  const st = await get('/api/ml/status');
+  const badge = document.getElementById('ml-status-badge');
+  if (!badge) return;
+  if (st.conectado) {
+    badge.textContent = '🟢 ML conectado';
+    badge.style.background = '#d1fae5'; badge.style.color = '#065f46';
+  } else {
+    badge.textContent = '🔴 ML desconectado';
+    badge.style.background = '#fee2e2'; badge.style.color = '#991b1b';
+  }
+}
+
+async function syncML() {
+  const btn = document.getElementById('btn-ml-sync');
+  btn.disabled = true; btn.textContent = '⏳ Sincronizando...';
+  try {
+    const data = await get('/api/ml/ventas');
+    if (data.error) {
+      if (data.auth_url) {
+        if (confirm('ML no está conectado. ¿Querés conectarlo ahora?')) window.open(data.auth_url);
+      } else {
+        alert('Error: ' + data.error);
+      }
+      return;
+    }
+    mlVentasMap = {};
+    data.forEach(v => { mlVentasMap[v.sku.toUpperCase()] = v.vendidos; });
+    await loadProyecciones();
+    alert(`✅ Sincronizado. ${data.length} SKUs con ventas en los últimos 30 días.`);
+  } catch(err) {
+    alert('Error al sincronizar: ' + err);
+  } finally {
+    btn.disabled = false; btn.textContent = '🛒 Sincronizar ML';
+  }
+}
+
 // ── Proyecciones ──────────────────────────────────────────────────────────────
 async function loadProyecciones() {
+  checkMLStatus();
   const data    = await get('/api/proyecciones');
   const tbody   = document.getElementById('proy-tbody');
   const resumen = document.getElementById('proy-resumen');
 
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--g400);padding:2rem">
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--g400);padding:2rem">
       No hay productos en el catálogo. Agregá productos primero en <strong>Catálogo</strong>.
     </td></tr>`;
     resumen.innerHTML = '';
@@ -1155,6 +1201,11 @@ async function loadProyecciones() {
               onfocus="this.style.borderColor='var(--blue)'"
               onblur="this.style.borderColor='var(--g200)'"/>`;
 
+    const skuKey = (r.sku || '').toUpperCase();
+    const ventasML = skuKey && mlVentasMap[skuKey] != null
+      ? `<span style="font-weight:700;color:#7c3aed">${mlVentasMap[skuKey]}</span>`
+      : '<span style="color:var(--g400)">—</span>';
+
     return `<tr style="${rowBg}">
       <td style="font-weight:500;color:var(--g900)">${e(r.nombre)}</td>
       <td>${e(r.color || '—')}</td>
@@ -1163,6 +1214,7 @@ async function loadProyecciones() {
       <td style="text-align:center">${inp('stock_separado', r.stock_separado)}</td>
       <td style="text-align:center">${inp('stock_full', r.stock_full)}</td>
       <td style="text-align:center;font-weight:700;font-size:1rem;color:var(--blue-dk)">${total}</td>
+      <td style="text-align:center">${ventasML}</td>
       <td style="text-align:center">${inp('ventas_mes', r.ventas_mes)}</td>
       <td style="text-align:center;line-height:1.4">${estadoHtml}</td>
     </tr>`;
