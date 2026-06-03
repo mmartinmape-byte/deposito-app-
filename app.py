@@ -789,6 +789,63 @@ def ml_ventas():
 
     return jsonify(list(ventas_item.values()))
 
+@app.route('/api/ml/match-debug')
+def ml_match_debug():
+    """Muestra ventas ML y productos del depósito para diagnosticar el cruce."""
+    token = ml_token()
+    if not token:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    # Productos del depósito
+    with engine.connect() as conn:
+        prods = [dict(r._mapping) for r in conn.execute(text('SELECT id, nombre, sku, color FROM productos ORDER BY nombre')).fetchall()]
+
+    # Ventas ML (reutiliza la lógica)
+    me = req_lib.get('https://api.mercadolibre.com/users/me', headers={'Authorization': f'Bearer {token}'}).json()
+    seller_id = me.get('id')
+    desde = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%dT00:00:00.000-03:00')
+    ventas_item = {}
+    offset = 0
+    while True:
+        url = (f'https://api.mercadolibre.com/orders/search?seller={seller_id}'
+               f'&order.date_created.from={desde}&order.status=paid&limit=50&offset={offset}')
+        resp = req_lib.get(url, headers={'Authorization': f'Bearer {token}'}).json()
+        ordenes = resp.get('results', [])
+        if not ordenes: break
+        for orden in ordenes:
+            for item in orden.get('order_items', []):
+                d = item.get('item', {})
+                iid = d.get('id','')
+                if iid not in ventas_item:
+                    ventas_item[iid] = {'item_id':iid,'sku':(d.get('seller_sku') or '').strip(),'titulo':d.get('title',''),'vendidos':0}
+                ventas_item[iid]['vendidos'] += item.get('quantity',0)
+        total = resp.get('paging',{}).get('total',0)
+        offset += 50
+        if offset >= total: break
+
+    ventas = list(ventas_item.values())
+
+    # Intentar cruce
+    matches = []
+    for v in ventas:
+        matched_prod = None
+        # Por SKU
+        if v['sku']:
+            for p in prods:
+                if (p['sku'] or '').upper() == v['sku'].upper():
+                    matched_prod = f"{p['nombre']} {p['color']} (SKU match)"
+                    break
+        # Por título
+        if not matched_prod:
+            titulo_up = v['titulo'].upper()
+            for p in prods:
+                if p['nombre'].upper() in titulo_up:
+                    matched_prod = f"{p['nombre']} {p['color']} (título match)"
+                    break
+        matches.append({'ml_titulo': v['titulo'], 'ml_sku': v['sku'], 'vendidos': v['vendidos'], 'match': matched_prod or '❌ Sin match'})
+
+    return jsonify({'total_ml_items': len(ventas), 'total_productos_deposito': len(prods), 'cruces': matches})
+
 @app.route('/api/ml/status')
 def ml_status():
     token = ml_token()
