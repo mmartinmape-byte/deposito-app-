@@ -920,7 +920,22 @@ def ml_debug():
             'attributes_count': len(det.get('attributes', [])),
             'attributes_sample': det.get('attributes', [])[:5],
         }
-    return jsonify({'seller_id': seller_id, 'total_ordenes_30d': total, 'muestra': muestra, 'item_detalle': item_detalle})
+    # Buscar específicamente el Zapatero Organizador para encontrar UVUD47723
+    item_zapatero = {}
+    r_zap = req_lib.get('https://api.mercadolibre.com/items/MLA2097273334',
+                        headers={'Authorization': f'Bearer {token}'})
+    if r_zap.status_code == 200:
+        d = r_zap.json()
+        item_zapatero = {
+            'id': d.get('id'),
+            'title': d.get('title'),
+            'seller_custom_field': d.get('seller_custom_field'),
+            'catalog_product_id': d.get('catalog_product_id'),
+            'catalog_listing': d.get('catalog_listing'),
+            'sku_attrs': [a for a in d.get('attributes', []) if any(k in (a.get('id','') + a.get('name','')).upper() for k in ['SKU','SELLER','CUSTOM','REF'])],
+            'variations': [{'id': v.get('id'), 'attrs': v.get('attribute_combinations',[])} for v in d.get('variations', [])[:3]],
+        }
+    return jsonify({'seller_id': seller_id, 'total_ordenes_30d': total, 'muestra': muestra, 'item_detalle': item_detalle, 'item_zapatero': item_zapatero})
 
 
 if __name__ == '__main__':
