@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request, jsonify, redirect
+from flask import Flask, render_template, request, jsonify, redirect, send_file
 from sqlalchemy import create_engine, text, event
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
-import os, requests as req_lib
+import os, io, requests as req_lib
+import openpyxl
 
 app = Flask(__name__)
 
@@ -577,6 +578,41 @@ def get_proyecciones():
             ORDER BY pr.nombre, pr.color
         ''')).fetchall()
     return jsonify([_row(r) for r in rows])
+
+
+@app.route('/api/export/stock')
+def export_stock_excel():
+    with engine.connect() as conn:
+        rows = conn.execute(text('''
+            SELECT
+                pr.sku,
+                pr.nombre,
+                pr.color,
+                COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS unidades
+            FROM productos pr
+            LEFT JOIN stock s
+                   ON LOWER(s.producto) = LOWER(pr.nombre)
+                  AND LOWER(s.color)    = LOWER(pr.color)
+            GROUP BY pr.sku, pr.nombre, pr.color
+            ORDER BY pr.nombre, pr.color
+        ''')).fetchall()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Stock Depósito'
+    ws.append(['SKU', 'Producto', 'Color', 'Unidades en depósito'])
+    for r in rows:
+        ws.append([r[0], r[1], r[2], r[3]])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='stock_deposito.xlsx'
+    )
 
 
 @app.route('/api/productos/<int:pid>/costo', methods=['PATCH'])
