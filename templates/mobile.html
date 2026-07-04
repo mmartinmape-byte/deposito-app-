@@ -468,32 +468,55 @@ let egStockItems  = [];   // items del palet seleccionado en egreso
 let egSelectedIdx = -1;  // índice del item seleccionado en egreso
 
 // ── Init ──────────────────────────────────────────────────────────────────
+let _retryTimer = null;
+
 (async function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js').catch(() => {});
   }
-  await Promise.all([loadPalets(), loadProductos()]);
+  await cargarDatos();
 })();
+
+// Carga palets + productos; si falla, reintenta solo cada 4 segundos
+async function cargarDatos() {
+  clearTimeout(_retryTimer);
+  const [okPalets] = await Promise.all([loadPalets(), loadProductos()]);
+  if (!okPalets) {
+    _retryTimer = setTimeout(cargarDatos, 4000);
+  }
+}
+
+// Al volver a la app (PWA resumida desde recientes), refrescar los datos
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') cargarDatos();
+});
 
 async function loadPalets() {
   try {
     const r = await fetch('/api/palets');
+    if (!r.ok) throw new Error();
     palets = await r.json();
     const opts = palets.map(p =>
       `<option value="${p.id}">${p.codigo}${p.descripcion ? ' — ' + p.descripcion : ''}</option>`
     ).join('');
     const ph = '<option value="">— Elegir palet —</option>';
     ['ing-palet','eg-palet','stock-palet'].forEach(id => {
-      document.getElementById(id).innerHTML = ph + opts;
+      const el = document.getElementById(id);
+      const prev = el.value;
+      el.innerHTML = ph + opts;
+      if (prev) el.value = prev;
     });
+    return true;
   } catch(e) {
-    toast('Error cargando palets', 'err');
+    toast('Sin conexión — reintentando…', 'err');
+    return false;
   }
 }
 
 async function loadProductos() {
   try {
     const r = await fetch('/api/productos');
+    if (!r.ok) throw new Error();
     productos = await r.json();
   } catch(e) {}
 }
