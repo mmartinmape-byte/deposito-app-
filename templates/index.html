@@ -93,6 +93,12 @@ td{padding:.72rem 1.1rem;border-bottom:1px solid var(--g200);color:var(--g600)}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--g50)}
 
+/* Proyecciones: usar todo el ancho de pantalla y celdas compactas
+   para que la tabla entre sin scroll horizontal */
+main:has(#sec-proyecciones.show){max-width:min(1760px,98vw)}
+#sec-proyecciones th{padding:.7rem .55rem;letter-spacing:.4px}
+#sec-proyecciones td{padding:.6rem .55rem}
+
 /* ── Badges ────────────────────────────────────────────────────────────────── */
 .badge{display:inline-block;padding:.18rem .6rem;border-radius:20px;font-size:.7rem;font-weight:600}
 .b-ingreso{background:var(--green-lt);color:var(--green)}
@@ -1214,7 +1220,7 @@ async function loadProyecciones() {
 
   let criticos = 0, alertas = 0, ok = 0, sinDatos = 0, valorTotal = 0;
 
-  const inpStyle = 'width:85px;padding:.3rem .45rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit;text-align:center';
+  const inpStyle = 'width:62px;padding:.3rem .3rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit;text-align:center';
 
   tbody.innerHTML = data.map(r => {
     const total = r.stock_deposito + r.stock_separado + r.stock_full;
