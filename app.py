@@ -596,13 +596,15 @@ def get_proyecciones():
             SELECT
                 pr.id, pr.nombre, pr.sku, pr.color,
                 pr.stock_separado, pr.stock_full, pr.ventas_mes, pr.ventas_ml,
+                pr.costo,
                 COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito
             FROM productos pr
             LEFT JOIN stock s
                    ON LOWER(s.producto) = LOWER(pr.nombre)
                   AND LOWER(s.color)    = LOWER(pr.color)
             GROUP BY pr.id, pr.nombre, pr.sku, pr.color,
-                     pr.stock_separado, pr.stock_full, pr.ventas_mes, pr.ventas_ml
+                     pr.stock_separado, pr.stock_full, pr.ventas_mes, pr.ventas_ml,
+                     pr.costo
             ORDER BY pr.nombre, pr.color
         ''')).fetchall()
     return jsonify([_row(r) for r in rows])

@@ -415,6 +415,7 @@ input:focus,select:focus{border-color:var(--blue)}
           <th style="text-align:center">Almacenamiento<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
           <th style="text-align:center">ML Full<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
           <th style="text-align:center">Total stock<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center" title="Total stock × costo unitario (el costo se carga en Inventario)">Valorización<br><span style="font-weight:400;font-size:.65rem;text-transform:none">($)</span></th>
           <th style="text-align:center">Ventas ML<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(últ. 30 días)</span></th>
           <th style="text-align:center" title="Si se deja en 0, la proyección usa las ventas de ML">Ventas/mes<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(manual, opcional)</span></th>
           <th style="text-align:center">Estado</th>
@@ -1204,14 +1205,14 @@ async function loadProyecciones() {
   catalogoSkuSet = new Set(data.map(r => (r.sku || '').trim().toUpperCase()).filter(Boolean));
 
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--g400);padding:2rem">
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--g400);padding:2rem">
       No hay productos en el catálogo. Agregá productos primero en <strong>Catálogo</strong>.
     </td></tr>`;
     resumen.innerHTML = '';
     return;
   }
 
-  let criticos = 0, alertas = 0, ok = 0, sinDatos = 0;
+  let criticos = 0, alertas = 0, ok = 0, sinDatos = 0, valorTotal = 0;
 
   const inpStyle = 'width:85px;padding:.3rem .45rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit;text-align:center';
 
@@ -1256,6 +1257,13 @@ async function loadProyecciones() {
       ? `<span style="font-weight:700;color:#7c3aed">${r.ventas_ml}</span>`
       : '<span style="color:var(--g400)">0</span>';
 
+    // Valorización: total stock × costo unitario (cargado en Inventario)
+    const valor = total * (r.costo || 0);
+    valorTotal += valor;
+    const valorCell = (r.costo || 0) > 0
+      ? `<strong style="color:var(--blue-dk)">$${valor.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</strong>`
+      : '<span style="color:var(--g400)" title="Sin costo cargado en Inventario">—</span>';
+
     return `<tr style="${rowBg}">
       <td style="font-weight:500;color:var(--g900)">${e(r.nombre)}</td>
       <td>${e(r.color || '—')}</td>
@@ -1264,6 +1272,7 @@ async function loadProyecciones() {
       <td style="text-align:center">${inp('stock_separado', r.stock_separado)}</td>
       <td style="text-align:center;font-weight:600;color:${r.stock_full > 0 ? '#7c3aed' : 'var(--g400)'}">${r.stock_full}</td>
       <td style="text-align:center;font-weight:700;font-size:1rem;color:var(--blue-dk)">${total}</td>
+      <td style="text-align:center">${valorCell}</td>
       <td style="text-align:center">${ventasML}</td>
       <td style="text-align:center">${inp('ventas_mes', r.ventas_mes)}</td>
       <td style="text-align:center;line-height:1.4">${estadoHtml}</td>
@@ -1287,6 +1296,10 @@ async function loadProyecciones() {
       <div class="stat" style="border-left:4px solid var(--g200)">
         <div class="stat-lbl">⚪ Sin datos de ventas</div>
         <div class="stat-val" style="color:var(--g400)">${sinDatos}</div>
+      </div>
+      <div class="stat" style="border-left:4px solid var(--blue-dk)">
+        <div class="stat-lbl">💰 Valorización total</div>
+        <div class="stat-val" style="color:var(--blue-dk)">$${valorTotal.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
       </div>
     </div>`;
 }
