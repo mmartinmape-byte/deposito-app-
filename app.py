@@ -921,11 +921,11 @@ def ml_full_stock():
             if not results or offset >= total:
                 break
 
-    # Detectar items/variantes en Full (tienen inventory_id) y su SKU.
-    # Sin filtro de attributes: el multiget filtrado recorta los campos de las
-    # variantes (inventory_id, seller_custom_field) y las publicaciones con
-    # variantes quedan sin stock Full.
-    inventario_sku = []  # (inventory_id, sku)
+    # Detectar items/variantes en Full y su SKU. El stock Full puede venir por
+    # dos sistemas: inventory_id (fulfillment clásico) o user_product_id
+    # (publicaciones nuevas). Sin filtro de attributes: el multiget filtrado
+    # recorta los campos de las variantes.
+    fuentes = []  # (tipo 'inv'|'up', id, sku)
     for i in range(0, len(item_ids), 20):
         batch = item_ids[i:i+20]
         r = req_lib.get(
@@ -945,29 +945,45 @@ def ml_full_stock():
             variations = body.get('variations') or []
             if variations:
                 for var in variations:
-                    inv = var.get('inventory_id')
-                    if not inv:
-                        continue
                     var_sku = (var.get('seller_custom_field') or '').strip()
                     if not var_sku:
                         for attr in (var.get('attributes') or []):
                             if attr.get('id') == 'SELLER_SKU':
                                 var_sku = (attr.get('value_name') or '').strip()
                                 break
-                    inventario_sku.append((inv, var_sku or item_sku))
+                    sku = var_sku or item_sku
+                    if var.get('inventory_id'):
+                        fuentes.append(('inv', var['inventory_id'], sku))
+                    elif var.get('user_product_id'):
+                        fuentes.append(('up', var['user_product_id'], sku))
             elif body.get('inventory_id'):
-                inventario_sku.append((body['inventory_id'], item_sku))
+                fuentes.append(('inv', body['inventory_id'], item_sku))
+            elif body.get('user_product_id'):
+                fuentes.append(('up', body['user_product_id'], item_sku))
 
-    # Stock disponible en Full por SKU (sumando variantes/publicaciones con mismo SKU)
+    # Stock disponible en Full por SKU. Dedupe por id de fuente: publicaciones
+    # clonadas (ej. de catálogo) comparten inventario y no deben sumar doble.
     full_por_sku = {}
-    for inv, sku in inventario_sku:
-        if not sku:
+    vistos = set()
+    for tipo, fid, sku in fuentes:
+        if not sku or (tipo, fid) in vistos:
             continue
-        r = req_lib.get(f'https://api.mercadolibre.com/inventories/{inv}/stock/fulfillment',
-                        headers=headers)
-        if r.status_code != 200:
-            continue
-        disponible = r.json().get('available_quantity', 0) or 0
+        vistos.add((tipo, fid))
+        disponible = 0
+        if tipo == 'inv':
+            r = req_lib.get(f'https://api.mercadolibre.com/inventories/{fid}/stock/fulfillment',
+                            headers=headers)
+            if r.status_code != 200:
+                continue
+            disponible = r.json().get('available_quantity', 0) or 0
+        else:
+            r = req_lib.get(f'https://api.mercadolibre.com/user-products/{fid}/stock',
+                            headers=headers)
+            if r.status_code != 200:
+                continue
+            for loc in r.json().get('locations', []):
+                if loc.get('type') == 'meli_facility':
+                    disponible += loc.get('quantity', 0) or 0
         k = sku.strip().upper()
         full_por_sku[k] = full_por_sku.get(k, 0) + disponible
 
@@ -1010,6 +1026,44 @@ def ml_full_stock():
         'sin_producto': sin_producto,
         'scan_completo': scan_completo,
     })
+
+
+@app.route('/api/ml/full-debug')
+def ml_full_debug():
+    """Muestra cómo expone ML el stock Full de un item (inventory_id vs user_product_id)."""
+    token = ml_token()
+    if not token:
+        return jsonify({'error': 'No autorizado'}), 401
+    headers = {'Authorization': f'Bearer {token}'}
+    item_id = request.args.get('item', 'MLA2177812334')
+    body = req_lib.get(f'https://api.mercadolibre.com/items/{item_id}', headers=headers).json()
+    out = {
+        'id': body.get('id'),
+        'title': body.get('title'),
+        'inventory_id': body.get('inventory_id'),
+        'user_product_id': body.get('user_product_id'),
+        'shipping_logistic': (body.get('shipping') or {}).get('logistic_type'),
+        'variations': [],
+    }
+    for var in body.get('variations') or []:
+        v = {
+            'id': var.get('id'),
+            'seller_custom_field': var.get('seller_custom_field'),
+            'inventory_id': var.get('inventory_id'),
+            'user_product_id': var.get('user_product_id'),
+            'attributes': [(a.get('id'), a.get('value_name')) for a in (var.get('attributes') or [])],
+            'keys': sorted(var.keys()),
+        }
+        fid = var.get('inventory_id')
+        if fid:
+            rs = req_lib.get(f'https://api.mercadolibre.com/inventories/{fid}/stock/fulfillment', headers=headers)
+            v['stock_fulfillment'] = rs.json() if rs.status_code == 200 else {'status': rs.status_code}
+        upid = var.get('user_product_id')
+        if upid:
+            rs = req_lib.get(f'https://api.mercadolibre.com/user-products/{upid}/stock', headers=headers)
+            v['stock_user_product'] = rs.json() if rs.status_code == 200 else {'status': rs.status_code}
+        out['variations'].append(v)
+    return jsonify(out)
 
 
 @app.route('/api/ml/match-debug')
