@@ -801,23 +801,29 @@ def ml_ventas():
                 variation_id = str(item_data.get('variation_id') or '')
                 titulo = item_data.get('title', '')
                 qty = item.get('quantity', 0)
+                # SKU directo de la orden (variante-específico, el más confiable)
+                sku_orden = (item_data.get('seller_sku')
+                             or item_data.get('seller_custom_field')
+                             or item.get('seller_sku') or '').strip()
                 key = f"{item_id}|{variation_id}"
                 if key not in ventas_item:
                     ventas_item[key] = {
                         'item_id': item_id,
                         'variation_id': variation_id,
-                        'sku': '',
+                        'sku': sku_orden,
                         'titulo': titulo,
                         'vendidos': 0
                     }
+                elif sku_orden and not ventas_item[key]['sku']:
+                    ventas_item[key]['sku'] = sku_orden
                 ventas_item[key]['vendidos'] += qty
         total = resp.get('paging', {}).get('total', 0)
         offset += 50
         if offset >= total:
             break
 
-    # Leer SKU desde atributo SELLER_SKU — a nivel item Y a nivel variante
-    items_unicos = list({v['item_id'] for v in ventas_item.values()})
+    # Fallback: leer SKU desde la publicación solo para ventas que no trajeron SKU en la orden
+    items_unicos = list({v['item_id'] for v in ventas_item.values() if not v['sku']})
     # Mapa variation_id -> sku
     variation_sku_map = {}
     # Mapa item_id -> sku (para items sin variantes)
@@ -847,16 +853,13 @@ def ml_ventas():
             if item_sku:
                 item_sku_map[iid] = item_sku
 
-            # SKU a nivel variante
+            # SKU a nivel variante: seller_custom_field o atributo SELLER_SKU
+            # (attribute_combinations trae color/talle, NO el SKU)
             for var in body.get('variations', []):
                 vid = str(var.get('id', ''))
-                var_sku = ''
-                for attr in var.get('attribute_combinations', []):
-                    if attr.get('id') == 'SELLER_SKU':
-                        var_sku = (attr.get('value_name') or '').strip()
-                        break
+                var_sku = (var.get('seller_custom_field') or '').strip()
                 if not var_sku:
-                    for attr in body.get('attributes', []):
+                    for attr in (var.get('attributes') or []):
                         if attr.get('id') == 'SELLER_SKU':
                             var_sku = (attr.get('value_name') or '').strip()
                             break
@@ -865,8 +868,10 @@ def ml_ventas():
                 elif item_sku:
                     variation_sku_map[vid] = item_sku
 
-    # Asignar SKU final a cada entrada
+    # Asignar SKU final a las entradas que aún no lo tienen
     for key, v in ventas_item.items():
+        if v['sku']:
+            continue
         vid = v['variation_id']
         iid = v['item_id']
         if vid and vid in variation_sku_map:
@@ -874,15 +879,14 @@ def ml_ventas():
         elif iid in item_sku_map:
             v['sku'] = item_sku_map[iid]
 
-    # Agrupar por SKU (sumar vendidos de distintas variantes con mismo SKU)
+    # Agrupar por SKU normalizado (sumar vendidos de distintas variantes/publicaciones con mismo SKU)
     por_sku = {}
     for v in ventas_item.values():
-        sku = v['sku']
-        if not sku:
-            sku = f"_nosku_{v['item_id']}"
-        if sku not in por_sku:
-            por_sku[sku] = {'sku': v['sku'], 'titulo': v['titulo'], 'vendidos': 0}
-        por_sku[sku]['vendidos'] += v['vendidos']
+        sku = v['sku'].strip()
+        key = sku.upper() if sku else f"_nosku_{v['item_id']}"
+        if key not in por_sku:
+            por_sku[key] = {'sku': sku, 'titulo': v['titulo'], 'vendidos': 0}
+        por_sku[key]['vendidos'] += v['vendidos']
 
     return jsonify(list(por_sku.values()))
 
