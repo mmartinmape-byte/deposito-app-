@@ -1154,11 +1154,31 @@ async function syncML() {
         sinSku.push(`${v.titulo} (${v.vendidos} vendidos)`);
       }
     });
+    // Traer stock de Mercado Envíos Full y actualizar la columna ML Full
+    let fullInfo = null;
+    btn.textContent = '⏳ Trayendo stock Full...';
+    try {
+      const rf = await fetch('/api/ml/full', { method: 'POST' });
+      fullInfo = await rf.json();
+    } catch (e) { /* si falla, se informa abajo */ }
+
     await loadProyecciones();
     // Desglose: de las que tienen SKU en ML, cuáles encontraron producto en el catálogo
     const sinCatalogo = data.filter(v => v.sku && !catalogoSkuSet.has(v.sku.trim().toUpperCase()));
     const cruzadas = conSku - sinCatalogo.length;
     let msg = `✅ Sincronizado. ${cruzadas} publicaciones cruzadas con el catálogo.`;
+    if (fullInfo && fullInfo.ok) {
+      msg += `\n📦 Stock Full: ${fullInfo.skus_en_full} SKUs en Full, ${fullInfo.actualizados} productos actualizados.`;
+      if (fullInfo.sin_producto && fullInfo.sin_producto.length) {
+        msg += `\n   ⚠️ Con stock en Full pero sin producto en el catálogo: ` +
+               fullInfo.sin_producto.map(s => `${s.sku} (${s.full}u)`).join(', ');
+      }
+      if (!fullInfo.scan_completo) {
+        msg += `\n   ⚠️ No se pudieron leer todas las cuentas: los productos fuera de Full no se resetearon a 0.`;
+      }
+    } else {
+      msg += `\n⚠️ No se pudo actualizar el stock Full${fullInfo && fullInfo.error ? ': ' + fullInfo.error : ''}.`;
+    }
     if (sinCatalogo.length) {
       const lista = sinCatalogo.sort((a, b) => b.vendidos - a.vendidos).slice(0, 15)
         .map(v => `${v.sku}: ${v.titulo} (${v.vendidos} vendidos)`);

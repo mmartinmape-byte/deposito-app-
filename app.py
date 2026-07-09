@@ -890,6 +890,126 @@ def ml_ventas():
 
     return jsonify(list(por_sku.values()))
 
+@app.route('/api/ml/full', methods=['POST'])
+def ml_full_stock():
+    """Trae el stock disponible en Mercado Envíos Full y actualiza stock_full por SKU."""
+    token = ml_token()
+    if not token:
+        return jsonify({'error': 'No autorizado. Reconectá ML.'}), 401
+    headers = {'Authorization': f'Bearer {token}'}
+
+    me = req_lib.get('https://api.mercadolibre.com/users/me', headers=headers).json()
+    seller_ids = [s for s in {me.get('id'), 192421371} if s]
+
+    # Todas las publicaciones de cada cuenta
+    item_ids = []
+    scan_completo = True
+    for sid in seller_ids:
+        offset = 0
+        while True:
+            r = req_lib.get(
+                f'https://api.mercadolibre.com/users/{sid}/items/search?limit=100&offset={offset}',
+                headers=headers)
+            if r.status_code != 200:
+                scan_completo = False
+                break
+            data = r.json()
+            results = data.get('results', [])
+            item_ids.extend(results)
+            total = data.get('paging', {}).get('total', 0)
+            offset += 100
+            if not results or offset >= total:
+                break
+
+    # Detectar items/variantes en Full (tienen inventory_id) y su SKU
+    inventario_sku = []  # (inventory_id, sku)
+    for i in range(0, len(item_ids), 20):
+        batch = item_ids[i:i+20]
+        r = req_lib.get(
+            f'https://api.mercadolibre.com/items?ids={",".join(batch)}'
+            f'&attributes=id,seller_custom_field,attributes,variations,inventory_id',
+            headers=headers)
+        if r.status_code != 200:
+            continue
+        for entry in r.json():
+            body = entry.get('body', {})
+            item_sku = ''
+            for attr in body.get('attributes', []):
+                if attr.get('id') == 'SELLER_SKU':
+                    item_sku = (attr.get('value_name') or '').strip()
+                    break
+            if not item_sku:
+                item_sku = (body.get('seller_custom_field') or '').strip()
+            variations = body.get('variations') or []
+            if variations:
+                for var in variations:
+                    inv = var.get('inventory_id')
+                    if not inv:
+                        continue
+                    var_sku = (var.get('seller_custom_field') or '').strip()
+                    if not var_sku:
+                        for attr in (var.get('attributes') or []):
+                            if attr.get('id') == 'SELLER_SKU':
+                                var_sku = (attr.get('value_name') or '').strip()
+                                break
+                    inventario_sku.append((inv, var_sku or item_sku))
+            elif body.get('inventory_id'):
+                inventario_sku.append((body['inventory_id'], item_sku))
+
+    # Stock disponible en Full por SKU (sumando variantes/publicaciones con mismo SKU)
+    full_por_sku = {}
+    for inv, sku in inventario_sku:
+        if not sku:
+            continue
+        r = req_lib.get(f'https://api.mercadolibre.com/inventories/{inv}/stock/fulfillment',
+                        headers=headers)
+        if r.status_code != 200:
+            continue
+        disponible = r.json().get('available_quantity', 0) or 0
+        k = sku.strip().upper()
+        full_por_sku[k] = full_por_sku.get(k, 0) + disponible
+
+    # Actualizar catálogo por SKU
+    actualizados = 0
+    sin_producto = []
+    with engine.begin() as conn:
+        cat = conn.execute(text(
+            "SELECT id, UPPER(TRIM(sku)) FROM productos WHERE sku IS NOT NULL AND TRIM(sku) <> ''"
+        )).fetchall()
+        cat_map = {}
+        for pid, sku in cat:
+            cat_map.setdefault(sku, []).append(pid)
+        for sku, qty in full_por_sku.items():
+            ids = cat_map.get(sku)
+            if not ids:
+                sin_producto.append({'sku': sku, 'full': qty})
+                continue
+            for pid in ids:
+                conn.execute(text('UPDATE productos SET stock_full=:v WHERE id=:id'),
+                             {'v': qty, 'id': pid})
+                actualizados += 1
+        # Los productos que no están en Full quedan en 0 (solo si el escaneo fue completo,
+        # para no pisar datos si falló la consulta de alguna cuenta)
+        reseteados = 0
+        if scan_completo:
+            for sku, ids in cat_map.items():
+                if sku in full_por_sku:
+                    continue
+                for pid in ids:
+                    conn.execute(text(
+                        'UPDATE productos SET stock_full=0 WHERE id=:id AND stock_full<>0'
+                    ), {'id': pid})
+                    reseteados += 1
+
+    return jsonify({
+        'ok': True,
+        'skus_en_full': len(full_por_sku),
+        'actualizados': actualizados,
+        'sin_producto': sin_producto,
+        'scan_completo': scan_completo,
+    })
+
+
 @app.route('/api/ml/match-debug')
 def ml_match_debug():
     """Muestra ventas ML y productos del depósito para diagnosticar el cruce."""
