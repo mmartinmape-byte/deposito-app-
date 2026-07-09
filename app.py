@@ -921,13 +921,15 @@ def ml_full_stock():
             if not results or offset >= total:
                 break
 
-    # Detectar items/variantes en Full (tienen inventory_id) y su SKU
+    # Detectar items/variantes en Full (tienen inventory_id) y su SKU.
+    # Sin filtro de attributes: el multiget filtrado recorta los campos de las
+    # variantes (inventory_id, seller_custom_field) y las publicaciones con
+    # variantes quedan sin stock Full.
     inventario_sku = []  # (inventory_id, sku)
     for i in range(0, len(item_ids), 20):
         batch = item_ids[i:i+20]
         r = req_lib.get(
-            f'https://api.mercadolibre.com/items?ids={",".join(batch)}'
-            f'&attributes=id,seller_custom_field,attributes,variations,inventory_id',
+            f'https://api.mercadolibre.com/items?ids={",".join(batch)}',
             headers=headers)
         if r.status_code != 200:
             continue

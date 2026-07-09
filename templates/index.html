@@ -1263,7 +1263,7 @@ async function loadProyecciones() {
       <td>${r.sku ? `<span class="badge b-transferencia">${e(r.sku)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
       <td style="text-align:center;font-weight:600;color:var(--blue-dk)">${r.stock_deposito}</td>
       <td style="text-align:center">${inp('stock_separado', r.stock_separado)}</td>
-      <td style="text-align:center">${inp('stock_full', r.stock_full)}</td>
+      <td style="text-align:center;font-weight:600;color:${r.stock_full > 0 ? '#7c3aed' : 'var(--g400)'}">${r.stock_full}</td>
       <td style="text-align:center;font-weight:700;font-size:1rem;color:var(--blue-dk)">${total}</td>
       <td style="text-align:center">${ventasML}</td>
       <td style="text-align:center">${inp('ventas_mes', r.ventas_mes)}</td>
