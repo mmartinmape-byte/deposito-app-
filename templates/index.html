@@ -1114,6 +1114,7 @@ async function updateCosto(prodId, valor, inputEl) {
 
 // ── ML Sync ───────────────────────────────────────────────────────────────────
 let mlVentasMap = {}; // sku -> vendidos
+let catalogoSkuSet = new Set(); // SKUs del catálogo (para reportar cruces en syncML)
 
 async function checkMLStatus() {
   const st = await get('/api/ml/status');
@@ -1154,9 +1155,18 @@ async function syncML() {
       }
     });
     await loadProyecciones();
-    let msg = `✅ Sincronizado. ${conSku} publicaciones cruzadas por SKU.`;
+    // Desglose: de las que tienen SKU en ML, cuáles encontraron producto en el catálogo
+    const sinCatalogo = data.filter(v => v.sku && !catalogoSkuSet.has(v.sku.trim().toUpperCase()));
+    const cruzadas = conSku - sinCatalogo.length;
+    let msg = `✅ Sincronizado. ${cruzadas} publicaciones cruzadas con el catálogo.`;
+    if (sinCatalogo.length) {
+      const lista = sinCatalogo.sort((a, b) => b.vendidos - a.vendidos).slice(0, 15)
+        .map(v => `${v.sku}: ${v.titulo} (${v.vendidos} vendidos)`);
+      msg += `\n\n⚠️ ${sinCatalogo.length} con SKU en ML pero SIN producto con ese SKU en el catálogo:\n- ` + lista.join('\n- ');
+      if (sinCatalogo.length > 15) msg += `\n… y ${sinCatalogo.length - 15} más`;
+    }
     if (sinSku.length) {
-      msg += `\n\n⚠️ ${sinSku.length} publicaciones SIN SKU en ML (no se cruzan):\n- ` + sinSku.join('\n- ');
+      msg += `\n\n⚠️ ${sinSku.length} publicaciones SIN SKU en ML (cargarles SKU en la publicación):\n- ` + sinSku.join('\n- ');
     }
     alert(msg);
   } catch(err) {
@@ -1172,6 +1182,7 @@ async function loadProyecciones() {
   const data    = await get('/api/proyecciones');
   const tbody   = document.getElementById('proy-tbody');
   const resumen = document.getElementById('proy-resumen');
+  catalogoSkuSet = new Set(data.map(r => (r.sku || '').trim().toUpperCase()).filter(Boolean));
 
   if (!data.length) {
     tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--g400);padding:2rem">
