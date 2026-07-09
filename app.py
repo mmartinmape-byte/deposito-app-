@@ -951,13 +951,15 @@ def ml_full_stock():
                             if attr.get('id') == 'SELLER_SKU':
                                 var_sku = (attr.get('value_name') or '').strip()
                                 break
-                    sku = var_sku or item_sku
+                    # Sin SELLER_SKU, ML muestra el inventory_id como SKU en la
+                    # UI de publicaciones — usarlo como último recurso
+                    sku = var_sku or item_sku or var.get('inventory_id') or ''
                     if var.get('inventory_id'):
                         fuentes.append(('inv', var['inventory_id'], sku))
                     elif var.get('user_product_id'):
                         fuentes.append(('up', var['user_product_id'], sku))
             elif body.get('inventory_id'):
-                fuentes.append(('inv', body['inventory_id'], item_sku))
+                fuentes.append(('inv', body['inventory_id'], item_sku or body['inventory_id']))
             elif body.get('user_product_id'):
                 fuentes.append(('up', body['user_product_id'], item_sku))
 
