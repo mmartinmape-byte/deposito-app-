@@ -751,22 +751,35 @@ def update_costo(pid):
 
 @app.route('/api/inventario')
 def get_inventario():
+    # Parte del catálogo (todos los productos, aunque tengan 0 stock, para
+    # poder cargarles costo) y suma el stock viejo que no está en el catálogo
     with engine.connect() as conn:
         rows = conn.execute(text('''
             SELECT
-                s.producto,
-                s.color,
-                COALESCE(pr.id, 0)    AS prod_id,
+                pr.nombre             AS producto,
+                pr.color              AS color,
+                pr.id                 AS prod_id,
                 COALESCE(pr.sku, '')  AS sku,
                 COALESCE(pr.costo, 0) AS costo,
-                SUM(s.cajas)                     AS total_cajas,
-                SUM(s.cajas * s.piezas_por_caja) AS total_piezas
+                COALESCE(SUM(s.cajas), 0)                     AS total_cajas,
+                COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS total_piezas
+            FROM productos pr
+            LEFT JOIN stock s
+                   ON LOWER(s.producto) = LOWER(pr.nombre)
+                  AND LOWER(s.color)    = LOWER(pr.color)
+            GROUP BY pr.id, pr.nombre, pr.color, pr.sku, pr.costo
+            UNION ALL
+            SELECT
+                s.producto, s.color, 0, '', 0,
+                SUM(s.cajas), SUM(s.cajas * s.piezas_por_caja)
             FROM stock s
-            LEFT JOIN productos pr
-                   ON LOWER(pr.nombre) = LOWER(s.producto)
-                  AND LOWER(pr.color)  = LOWER(s.color)
-            GROUP BY s.producto, s.color, pr.id, pr.sku, pr.costo
-            ORDER BY s.producto, s.color
+            WHERE NOT EXISTS (
+                SELECT 1 FROM productos pr
+                WHERE LOWER(pr.nombre) = LOWER(s.producto)
+                  AND LOWER(COALESCE(pr.color,'')) = LOWER(COALESCE(s.color,''))
+            )
+            GROUP BY s.producto, s.color
+            ORDER BY producto, color
         ''')).fetchall()
     return jsonify([_row(r) for r in rows])
 
