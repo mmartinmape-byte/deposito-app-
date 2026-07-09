@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 import os, io, requests as req_lib
 import openpyxl
+from openpyxl.styles import Font as XlFont
 
 app = Flask(__name__)
 
@@ -205,12 +206,14 @@ def migrate_db():
         ('stock_separado', 'INTEGER NOT NULL DEFAULT 0'),
         ('stock_full',     'INTEGER NOT NULL DEFAULT 0'),
         ('ventas_mes',     'INTEGER NOT NULL DEFAULT 0'),
+        ('ventas_ml',      'INTEGER NOT NULL DEFAULT 0'),
     ]
     _nuevas_sq = [
         ('costo',          'REAL    NOT NULL DEFAULT 0'),
         ('stock_separado', 'INTEGER NOT NULL DEFAULT 0'),
         ('stock_full',     'INTEGER NOT NULL DEFAULT 0'),
         ('ventas_mes',     'INTEGER NOT NULL DEFAULT 0'),
+        ('ventas_ml',      'INTEGER NOT NULL DEFAULT 0'),
     ]
     try:
         if IS_PG:
@@ -567,14 +570,14 @@ def get_proyecciones():
         rows = conn.execute(text('''
             SELECT
                 pr.id, pr.nombre, pr.sku, pr.color,
-                pr.stock_separado, pr.stock_full, pr.ventas_mes,
+                pr.stock_separado, pr.stock_full, pr.ventas_mes, pr.ventas_ml,
                 COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito
             FROM productos pr
             LEFT JOIN stock s
                    ON LOWER(s.producto) = LOWER(pr.nombre)
                   AND LOWER(s.color)    = LOWER(pr.color)
             GROUP BY pr.id, pr.nombre, pr.sku, pr.color,
-                     pr.stock_separado, pr.stock_full, pr.ventas_mes
+                     pr.stock_separado, pr.stock_full, pr.ventas_mes, pr.ventas_ml
             ORDER BY pr.nombre, pr.color
         ''')).fetchall()
     return jsonify([_row(r) for r in rows])
@@ -613,6 +616,95 @@ def export_stock_excel():
         as_attachment=True,
         download_name='stock_deposito.xlsx'
     )
+
+
+@app.route('/api/export/almacenamiento')
+def export_almacenamiento_excel():
+    with engine.connect() as conn:
+        rows = conn.execute(text('''
+            SELECT sku, nombre, color, stock_separado
+            FROM productos ORDER BY nombre, color
+        ''')).fetchall()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Almacenamiento'
+    ws.append(['SKU', 'Producto', 'Color', 'Almacenamiento (piezas)'])
+    for c in ws[1]:
+        c.font = XlFont(bold=True)
+    for r in rows:
+        ws.append([r[0], r[1], r[2], r[3]])
+    for col, w in zip('ABCD', (18, 40, 16, 24)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = 'A2'
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='almacenamiento.xlsx'
+    )
+
+
+@app.route('/api/import/almacenamiento', methods=['POST'])
+def import_almacenamiento_excel():
+    """Actualiza stock_separado por SKU desde un Excel (celdas vacías no tocan)."""
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'No se recibió ningún archivo'}), 400
+    try:
+        wb = openpyxl.load_workbook(f, data_only=True)
+    except Exception as e:
+        return jsonify({'error': f'No se pudo leer el Excel: {e}'}), 400
+    ws = wb.active
+
+    headers = [str(c.value or '').strip().lower() for c in ws[1]]
+    def _col(*nombres):
+        for i, h in enumerate(headers):
+            if any(n in h for n in nombres):
+                return i
+        return None
+    col_sku = _col('sku')
+    col_alm = _col('almacenamiento', 'separado')
+    if col_sku is None or col_alm is None:
+        return jsonify({'error': 'El Excel debe tener columnas "SKU" y "Almacenamiento" en la primera fila'}), 400
+
+    actualizados = 0
+    sin_match = []
+    invalidos = []
+    with engine.begin() as conn:
+        cat = conn.execute(text(
+            "SELECT id, UPPER(TRIM(sku)) FROM productos WHERE sku IS NOT NULL AND TRIM(sku) <> ''"
+        )).fetchall()
+        cat_map = {}
+        for pid, sku in cat:
+            cat_map.setdefault(sku, []).append(pid)
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            sku = str(row[col_sku] or '').strip().upper()
+            if not sku:
+                continue
+            val = row[col_alm] if col_alm < len(row) else None
+            if val is None or str(val).strip() == '':
+                continue
+            try:
+                qty = max(0, int(float(val)))
+            except (TypeError, ValueError):
+                invalidos.append(sku)
+                continue
+            ids = cat_map.get(sku)
+            if not ids:
+                sin_match.append(sku)
+                continue
+            for pid in ids:
+                conn.execute(text('UPDATE productos SET stock_separado=:v WHERE id=:id'),
+                             {'v': qty, 'id': pid})
+                actualizados += 1
+
+    return jsonify({'ok': True, 'actualizados': actualizados,
+                    'sin_match': sin_match, 'invalidos': invalidos})
 
 
 @app.route('/api/productos/<int:pid>/costo', methods=['PATCH'])
@@ -887,6 +979,20 @@ def ml_ventas():
         if key not in por_sku:
             por_sku[key] = {'sku': sku, 'titulo': v['titulo'], 'vendidos': 0}
         por_sku[key]['vendidos'] += v['vendidos']
+
+    # Persistir en el catálogo: ventas_ml por SKU (0 para los que salieron
+    # de la ventana de 30 días), así la proyección funciona sin re-sincronizar
+    try:
+        with engine.begin() as conn:
+            conn.execute(text('UPDATE productos SET ventas_ml=0'))
+            for key, v in por_sku.items():
+                if not v['sku']:
+                    continue
+                conn.execute(text(
+                    'UPDATE productos SET ventas_ml=:v WHERE UPPER(TRIM(sku))=:sku'
+                ), {'v': v['vendidos'], 'sku': key})
+    except Exception as ex:
+        print(f'  Aviso persistencia ventas_ml: {ex}')
 
     return jsonify(list(por_sku.values()))
 

@@ -398,6 +398,9 @@ input:focus,select:focus{border-color:var(--blue)}
       <button class="btn btn-ghost" id="btn-ml-sync" onclick="syncML()" title="Traer ventas ML últimos 30 días">🛒 Sincronizar ML</button>
       <button class="btn btn-ghost" onclick="loadProyecciones()">↻ Actualizar</button>
       <a class="btn btn-ghost" href="/api/export/stock" download>📥 Exportar Excel</a>
+      <a class="btn btn-ghost" href="/api/export/almacenamiento" download title="Descargar planilla de almacenamiento para completar">⬇ Almacenamiento</a>
+      <button class="btn btn-ghost" onclick="document.getElementById('alm-file').click()" title="Subir planilla de almacenamiento completada">⬆ Importar almacenamiento</button>
+      <input type="file" id="alm-file" accept=".xlsx" style="display:none" onchange="importarAlmacenamiento(this)"/>
     </div>
   </div>
   <div id="proy-resumen"></div>
@@ -413,7 +416,7 @@ input:focus,select:focus{border-color:var(--blue)}
           <th style="text-align:center">ML Full<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
           <th style="text-align:center">Total stock<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
           <th style="text-align:center">Ventas ML<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(últ. 30 días)</span></th>
-          <th style="text-align:center">Ventas/mes<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center" title="Si se deja en 0, la proyección usa las ventas de ML">Ventas/mes<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(manual, opcional)</span></th>
           <th style="text-align:center">Estado</th>
         </tr>
       </thead>
@@ -1113,7 +1116,6 @@ async function updateCosto(prodId, valor, inputEl) {
 }
 
 // ── ML Sync ───────────────────────────────────────────────────────────────────
-let mlVentasMap = {}; // sku -> vendidos
 let catalogoSkuSet = new Set(); // SKUs del catálogo (para reportar cruces en syncML)
 
 async function checkMLStatus() {
@@ -1142,13 +1144,10 @@ async function syncML() {
       }
       return;
     }
-    mlVentasMap = {};
     let conSku = 0;
     const sinSku = [];
     data.forEach(v => {
       if (v.sku) {
-        const key = 'SKU:' + v.sku.trim().toUpperCase();
-        mlVentasMap[key] = (mlVentasMap[key] || 0) + v.vendidos;
         conSku++;
       } else {
         sinSku.push(`${v.titulo} (${v.vendidos} vendidos)`);
@@ -1219,23 +1218,28 @@ async function loadProyecciones() {
   tbody.innerHTML = data.map(r => {
     const total = r.stock_deposito + r.stock_separado + r.stock_full;
 
+    // Ventas para proyectar: por defecto las de ML; Ventas/mes manual las pisa
+    const usandoML  = r.ventas_mes <= 0 && (r.ventas_ml || 0) > 0;
+    const ventasEf  = r.ventas_mes > 0 ? r.ventas_mes : (r.ventas_ml || 0);
+    const fuenteTag = usandoML ? ' · <span style="color:#7c3aed;font-weight:600">ML</span>' : '';
+
     let mesesTxt, estadoHtml, rowBg;
-    if (r.ventas_mes <= 0) {
+    if (ventasEf <= 0) {
       mesesTxt  = '—';
       estadoHtml = '<span style="color:var(--g400)">⚪ Sin datos</span>';
       rowBg = '';
       sinDatos++;
     } else {
-      const meses = total / r.ventas_mes;
+      const meses = total / ventasEf;
       mesesTxt = meses.toFixed(1) + ' mes' + (meses !== 1 ? 'es' : '');
       if (meses < 1) {
-        estadoHtml = `<span style="color:var(--red);font-weight:600">🔴 Crítico</span><br><small style="color:var(--g400)">${mesesTxt}</small>`;
+        estadoHtml = `<span style="color:var(--red);font-weight:600">🔴 Crítico</span><br><small style="color:var(--g400)">${mesesTxt}${fuenteTag}</small>`;
         rowBg = 'background:#fff8f8'; criticos++;
       } else if (meses < 2) {
-        estadoHtml = `<span style="color:var(--orange);font-weight:600">🟡 Alerta</span><br><small style="color:var(--g400)">${mesesTxt}</small>`;
+        estadoHtml = `<span style="color:var(--orange);font-weight:600">🟡 Alerta</span><br><small style="color:var(--g400)">${mesesTxt}${fuenteTag}</small>`;
         rowBg = 'background:#fffdf0'; alertas++;
       } else {
-        estadoHtml = `<span style="color:var(--green);font-weight:600">🟢 OK</span><br><small style="color:var(--g400)">${mesesTxt}</small>`;
+        estadoHtml = `<span style="color:var(--green);font-weight:600">🟢 OK</span><br><small style="color:var(--g400)">${mesesTxt}${fuenteTag}</small>`;
         rowBg = ''; ok++;
       }
     }
@@ -1247,15 +1251,10 @@ async function loadProyecciones() {
               onfocus="this.style.borderColor='var(--blue)'"
               onblur="this.style.borderColor='var(--g200)'"/>`;
 
-    // Cruce SOLO por SKU (el registrado en ML debe coincidir con el del catálogo)
-    const skuKey = (r.sku || '').trim().toUpperCase();
-    let ventasMLNum = null;
-    if (skuKey && mlVentasMap['SKU:' + skuKey] != null) {
-      ventasMLNum = mlVentasMap['SKU:' + skuKey];
-    }
-    const ventasML = ventasMLNum != null
-      ? `<span style="font-weight:700;color:#7c3aed">${ventasMLNum}</span>`
-      : '<span style="color:var(--g400)">—</span>';
+    // Ventas ML guardadas en la base (se actualizan al Sincronizar ML)
+    const ventasML = (r.ventas_ml || 0) > 0
+      ? `<span style="font-weight:700;color:#7c3aed">${r.ventas_ml}</span>`
+      : '<span style="color:var(--g400)">0</span>';
 
     return `<tr style="${rowBg}">
       <td style="font-weight:500;color:var(--g900)">${e(r.nombre)}</td>
@@ -1290,6 +1289,30 @@ async function loadProyecciones() {
         <div class="stat-val" style="color:var(--g400)">${sinDatos}</div>
       </div>
     </div>`;
+}
+
+async function importarAlmacenamiento(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  inputEl.value = ''; // permitir re-subir el mismo archivo
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/import/almacenamiento', { method: 'POST', body: fd });
+    const j = await res.json();
+    if (j.error) { alert('❌ ' + j.error); return; }
+    let msg = `✅ Almacenamiento actualizado en ${j.actualizados} productos.`;
+    if (j.sin_match && j.sin_match.length) {
+      msg += `\n\n⚠️ SKUs del Excel que no están en el catálogo (${j.sin_match.length}):\n- ` + j.sin_match.join('\n- ');
+    }
+    if (j.invalidos && j.invalidos.length) {
+      msg += `\n\n⚠️ Valores no numéricos ignorados en: ` + j.invalidos.join(', ');
+    }
+    alert(msg);
+    await loadProyecciones();
+  } catch (err) {
+    alert('Error al importar: ' + err);
+  }
 }
 
 async function updateProyeccion(prodId, campo, valor, inputEl) {
