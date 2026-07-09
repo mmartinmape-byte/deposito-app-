@@ -374,6 +374,11 @@ def crear_movimiento():
         with engine.begin() as conn:
 
             if tipo == 'ingreso':
+                if not _en_catalogo(conn, d['producto'], d.get('color')):
+                    raise ValueError(
+                        f"'{d['producto']}{(' ' + d['color']) if d.get('color') else ''}' no está en el catálogo. "
+                        'Cargalo primero en Catálogo para poder ingresarlo al depósito.'
+                    )
                 _add(conn, d['palet_id'], d['producto'], d['color'], d.get('piezas_por_caja', 0), d['cajas'])
                 conn.execute(text(
                     'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,observacion,fecha) '
@@ -414,6 +419,17 @@ def crear_movimiento():
                     'obs': d.get('observacion', ''), 'f': _now()})
 
             elif tipo == 'ajuste':
+                # Un ajuste sobre stock inexistente crea mercadería nueva:
+                # exigir catálogo igual que un ingreso (los ajustes sobre
+                # stock ya existente no se bloquean)
+                existe = conn.execute(text(
+                    'SELECT 1 FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col'
+                ), {'pid': d['palet_id'], 'prod': d['producto'], 'col': d['color']}).fetchone()
+                if not existe and not _en_catalogo(conn, d['producto'], d.get('color')):
+                    raise ValueError(
+                        f"'{d['producto']}{(' ' + d['color']) if d.get('color') else ''}' no está en el catálogo. "
+                        'Cargalo primero en Catálogo para poder ingresarlo al depósito.'
+                    )
                 _set(conn, d['palet_id'], d['producto'], d['color'], d.get('piezas_por_caja', 0), d['cajas'])
                 conn.execute(text(
                     'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,observacion,fecha) '
@@ -431,6 +447,15 @@ def crear_movimiento():
 
 
 # ── Helpers de stock ──────────────────────────────────────────────────────────
+
+def _en_catalogo(conn, producto, color):
+    """True si producto+color existe en el catálogo (comparación sin mayúsculas/espacios)."""
+    return conn.execute(text(
+        "SELECT 1 FROM productos "
+        "WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(:p)) "
+        "  AND LOWER(TRIM(COALESCE(color,''))) = LOWER(TRIM(:c))"
+    ), {'p': producto or '', 'c': color or ''}).fetchone() is not None
+
 
 def _add(conn, palet_id, producto, color, ppk, cajas):
     # Busca por producto + color + piezas_por_caja: cada combinación es una entrada independiente
