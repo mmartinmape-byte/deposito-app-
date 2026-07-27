@@ -1335,8 +1335,20 @@ def ml_catalogo_excel():
             break
 
     # 2) Detalle en lotes de 20 (multiget), una fila por variante
+    def _sku_de(obj):
+        """SKU en orden de preferencia: SELLER_SKU cargado a mano, seller_custom_field,
+        seller_sku, o inventory_id (los productos Full usan el inventory_id como SKU)."""
+        for attr in (obj.get('attributes') or []):
+            if attr.get('id') == 'SELLER_SKU' and (attr.get('value_name') or '').strip():
+                return attr['value_name'].strip()
+        for campo in ('seller_custom_field', 'seller_sku', 'inventory_id'):
+            v = (obj.get(campo) or '').strip()
+            if v:
+                return v
+        return ''
+
     filas = []
-    attrs = 'id,title,price,status,seller_custom_field,attributes,variations'
+    attrs = 'id,title,price,status,seller_custom_field,seller_sku,inventory_id,attributes,variations'
     for i in range(0, len(item_ids), 20):
         batch = item_ids[i:i+20]
         r = req_lib.get('https://api.mercadolibre.com/items?ids=' + ','.join(batch) +
@@ -1349,13 +1361,7 @@ def ml_catalogo_excel():
                 continue
             titulo = (body.get('title') or '').strip()
             precio_item = body.get('price') or 0
-            item_sku = ''
-            for attr in body.get('attributes', []):
-                if attr.get('id') == 'SELLER_SKU':
-                    item_sku = (attr.get('value_name') or '').strip()
-                    break
-            if not item_sku:
-                item_sku = (body.get('seller_custom_field') or '').strip()
+            item_sku = _sku_de(body)
 
             variations = body.get('variations') or []
             if variations:
@@ -1363,13 +1369,7 @@ def ml_catalogo_excel():
                     combos = var.get('attribute_combinations') or []
                     variante = ' / '.join((c.get('value_name') or '').strip()
                                           for c in combos if c.get('value_name'))
-                    var_sku = (var.get('seller_custom_field') or '').strip()
-                    if not var_sku:
-                        for attr in (var.get('attributes') or []):
-                            if attr.get('id') == 'SELLER_SKU':
-                                var_sku = (attr.get('value_name') or '').strip()
-                                break
-                    filas.append((titulo, variante, var_sku or item_sku,
+                    filas.append((titulo, variante, _sku_de(var) or item_sku,
                                   var.get('price') or precio_item))
             else:
                 filas.append((titulo, '', item_sku, precio_item))
