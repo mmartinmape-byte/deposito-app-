@@ -1379,6 +1379,9 @@ def ml_catalogo_excel():
     if request.args.get('debug'):
         return jsonify({'seller_id': seller_id, 'nickname': me.get('nickname'),
                         'items_activos': len(item_ids), 'filas': len(filas),
+                        'con_sku': sum(1 for f in filas if f[2]),
+                        'sin_sku': sum(1 for f in filas if not f[2]),
+                        'titulos_sin_sku': sorted({f[0] for f in filas if not f[2]}),
                         'muestra': filas[:8]})
 
     wb = openpyxl.Workbook()
