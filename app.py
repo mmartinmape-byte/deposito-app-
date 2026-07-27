@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 import os, io, requests as req_lib
 import openpyxl
-from openpyxl.styles import Font as XlFont
+from openpyxl.styles import Font as XlFont, PatternFill
 
 app = Flask(__name__)
 
@@ -1299,6 +1299,107 @@ def ml_match_debug():
 def ml_status():
     token = ml_token()
     return jsonify({'conectado': bool(token)})
+
+@app.route('/api/ml/catalogo-excel')
+def ml_catalogo_excel():
+    """Exporta TODAS las publicaciones activas de ML en el formato del catálogo
+    de ventas (ID, Nombre, Variante, Costo, Origen, SKU, Precio).
+    ?debug=1 devuelve un resumen JSON en vez del Excel.
+    ?seller=<id> fuerza otro seller (por defecto, la cuenta del token)."""
+    token = ml_token()
+    if not token:
+        return jsonify({'error': 'No autorizado. Reconectá ML.'}), 401
+    headers = {'Authorization': f'Bearer {token}'}
+
+    me = req_lib.get('https://api.mercadolibre.com/users/me', headers=headers).json()
+    seller_id = request.args.get('seller') or me.get('id')
+    if not seller_id:
+        return jsonify({'error': 'No se pudo obtener el seller ID'}), 500
+
+    # 1) IDs de publicaciones activas (scroll/scan)
+    item_ids, scroll = [], None
+    for _ in range(500):
+        url = (f'https://api.mercadolibre.com/users/{seller_id}/items/search'
+               f'?status=active&limit=100&search_type=scan')
+        if scroll:
+            url += f'&scroll_id={scroll}'
+        r = req_lib.get(url, headers=headers)
+        if r.status_code != 200:
+            return jsonify({'error': f'ML respondió {r.status_code} al listar items',
+                            'detalle': r.text[:300], 'seller_id': seller_id}), 502
+        data = r.json()
+        results = data.get('results', [])
+        scroll = data.get('scroll_id')
+        item_ids += results
+        if not results or not scroll:
+            break
+
+    # 2) Detalle en lotes de 20 (multiget), una fila por variante
+    filas = []
+    attrs = 'id,title,price,status,seller_custom_field,attributes,variations'
+    for i in range(0, len(item_ids), 20):
+        batch = item_ids[i:i+20]
+        r = req_lib.get('https://api.mercadolibre.com/items?ids=' + ','.join(batch) +
+                        '&attributes=' + attrs, headers=headers)
+        if r.status_code != 200:
+            continue
+        for entry in r.json():
+            body = entry.get('body', {})
+            if not body or body.get('status') != 'active':
+                continue
+            titulo = (body.get('title') or '').strip()
+            precio_item = body.get('price') or 0
+            item_sku = ''
+            for attr in body.get('attributes', []):
+                if attr.get('id') == 'SELLER_SKU':
+                    item_sku = (attr.get('value_name') or '').strip()
+                    break
+            if not item_sku:
+                item_sku = (body.get('seller_custom_field') or '').strip()
+
+            variations = body.get('variations') or []
+            if variations:
+                for var in variations:
+                    combos = var.get('attribute_combinations') or []
+                    variante = ' / '.join((c.get('value_name') or '').strip()
+                                          for c in combos if c.get('value_name'))
+                    var_sku = (var.get('seller_custom_field') or '').strip()
+                    if not var_sku:
+                        for attr in (var.get('attributes') or []):
+                            if attr.get('id') == 'SELLER_SKU':
+                                var_sku = (attr.get('value_name') or '').strip()
+                                break
+                    filas.append((titulo, variante, var_sku or item_sku,
+                                  var.get('price') or precio_item))
+            else:
+                filas.append((titulo, '', item_sku, precio_item))
+
+    filas.sort(key=lambda f: (f[0].lower(), (f[1] or '').lower()))
+
+    if request.args.get('debug'):
+        return jsonify({'seller_id': seller_id, 'nickname': me.get('nickname'),
+                        'items_activos': len(item_ids), 'filas': len(filas),
+                        'muestra': filas[:8]})
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Catalogo'
+    ws.append(['ID', 'Nombre', 'Variante', 'Costo', 'Origen', 'SKU', 'Precio'])
+    for c in ws[1]:
+        c.font = XlFont(bold=True, color='FFFFFF')
+        c.fill = PatternFill('solid', start_color='1A3A5C')
+    for (nombre, variante, sku, precio) in filas:
+        ws.append(['', nombre, variante, 0, 'stock', sku, float(precio or 0)])
+    ws.freeze_panes = 'A2'
+    for col, w in zip('ABCDEFG', (8, 46, 28, 12, 12, 20, 14)):
+        ws.column_dimensions[col].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f'catalogo_ml_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True, download_name=fname)
 
 @app.route('/api/ml/debug')
 def ml_debug():
