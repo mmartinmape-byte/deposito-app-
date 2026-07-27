@@ -1316,23 +1316,28 @@ def ml_catalogo_excel():
     if not seller_id:
         return jsonify({'error': 'No se pudo obtener el seller ID'}), 500
 
-    # 1) IDs de publicaciones activas (scroll/scan)
-    item_ids, scroll = [], None
-    for _ in range(500):
-        url = (f'https://api.mercadolibre.com/users/{seller_id}/items/search'
-               f'?status=active&limit=100&search_type=scan')
-        if scroll:
-            url += f'&scroll_id={scroll}'
-        r = req_lib.get(url, headers=headers)
-        if r.status_code != 200:
-            return jsonify({'error': f'ML respondió {r.status_code} al listar items',
-                            'detalle': r.text[:300], 'seller_id': seller_id}), 502
-        data = r.json()
-        results = data.get('results', [])
-        scroll = data.get('scroll_id')
-        item_ids += results
-        if not results or not scroll:
-            break
+    # 1) IDs de publicaciones (scroll/scan). Por defecto activas + pausadas.
+    estados = [e for e in request.args.get('estados', 'active,paused').split(',')
+               if e in ('active', 'paused', 'closed', 'under_review')] or ['active', 'paused']
+    item_ids = []
+    for st in estados:
+        scroll = None
+        for _ in range(500):
+            url = (f'https://api.mercadolibre.com/users/{seller_id}/items/search'
+                   f'?status={st}&limit=100&search_type=scan')
+            if scroll:
+                url += f'&scroll_id={scroll}'
+            r = req_lib.get(url, headers=headers)
+            if r.status_code != 200:
+                return jsonify({'error': f'ML respondió {r.status_code} al listar items',
+                                'detalle': r.text[:300], 'seller_id': seller_id}), 502
+            data = r.json()
+            results = data.get('results', [])
+            scroll = data.get('scroll_id')
+            item_ids += results
+            if not results or not scroll:
+                break
+    item_ids = list(dict.fromkeys(item_ids))  # sin duplicados, conservando orden
 
     # 2) Detalle en lotes de 20 (multiget), una fila por variante
     def _sku_de(obj):
@@ -1355,10 +1360,13 @@ def ml_catalogo_excel():
                         '&attributes=' + attrs, headers=headers)
         if r.status_code != 200:
             continue
+        ESTADO_LBL = {'active': 'Activa', 'paused': 'Pausada',
+                      'closed': 'Cerrada', 'under_review': 'En revisión'}
         for entry in r.json():
             body = entry.get('body', {})
-            if not body or body.get('status') != 'active':
+            if not body or body.get('status') not in estados:
                 continue
+            estado = ESTADO_LBL.get(body.get('status'), body.get('status') or '')
             titulo = (body.get('title') or '').strip()
             precio_item = body.get('price') or 0
             item_sku = _sku_de(body)
@@ -1370,15 +1378,17 @@ def ml_catalogo_excel():
                     variante = ' / '.join((c.get('value_name') or '').strip()
                                           for c in combos if c.get('value_name'))
                     filas.append((titulo, variante, _sku_de(var) or item_sku,
-                                  var.get('price') or precio_item))
+                                  var.get('price') or precio_item, estado))
             else:
-                filas.append((titulo, '', item_sku, precio_item))
+                filas.append((titulo, '', item_sku, precio_item, estado))
 
     filas.sort(key=lambda f: (f[0].lower(), (f[1] or '').lower()))
 
     if request.args.get('debug'):
         return jsonify({'seller_id': seller_id, 'nickname': me.get('nickname'),
-                        'items_activos': len(item_ids), 'filas': len(filas),
+                        'items': len(item_ids), 'filas': len(filas),
+                        'activas': sum(1 for f in filas if f[4] == 'Activa'),
+                        'pausadas': sum(1 for f in filas if f[4] == 'Pausada'),
                         'con_sku': sum(1 for f in filas if f[2]),
                         'sin_sku': sum(1 for f in filas if not f[2]),
                         'titulos_sin_sku': sorted({f[0] for f in filas if not f[2]}),
@@ -1387,14 +1397,14 @@ def ml_catalogo_excel():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Catalogo'
-    ws.append(['ID', 'Nombre', 'Variante', 'Costo', 'Origen', 'SKU', 'Precio'])
+    ws.append(['ID', 'Nombre', 'Variante', 'Costo', 'Origen', 'SKU', 'Precio', 'Estado'])
     for c in ws[1]:
         c.font = XlFont(bold=True, color='FFFFFF')
         c.fill = PatternFill('solid', start_color='1A3A5C')
-    for (nombre, variante, sku, precio) in filas:
-        ws.append(['', nombre, variante, 0, 'stock', sku, float(precio or 0)])
+    for (nombre, variante, sku, precio, estado) in filas:
+        ws.append(['', nombre, variante, 0, 'stock', sku, float(precio or 0), estado])
     ws.freeze_panes = 'A2'
-    for col, w in zip('ABCDEFG', (8, 46, 28, 12, 12, 20, 14)):
+    for col, w in zip('ABCDEFGH', (8, 46, 28, 12, 12, 20, 14, 12)):
         ws.column_dimensions[col].width = w
 
     buf = io.BytesIO()
