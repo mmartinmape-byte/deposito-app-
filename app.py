@@ -402,11 +402,10 @@ def crear_movimiento():
                 dest = d.get('palet_destino_id')
                 if not dest or dest == d['palet_id']:
                     raise ValueError('El palet origen y destino no pueden ser el mismo')
-                row = conn.execute(
-                    text('SELECT piezas_por_caja FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col'),
-                    {'pid': d['palet_id'], 'prod': d['producto'], 'col': d['color']}
-                ).fetchone()
-                ppk = row.piezas_por_caja if row else 0
+                # Usar las piezas/caja que vienen del formulario (igual que el egreso):
+                # así se distingue la variante correcta cuando un mismo producto+color
+                # existe con distinta cantidad de piezas por caja (ej: Negro 10 vs 20).
+                ppk = d.get('piezas_por_caja', 0)
                 ok  = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], ppk)
                 if not ok:
                     raise ValueError('Stock insuficiente en el palet origen')
