@@ -900,14 +900,17 @@ async function loadMovForm() {
   document.getElementById('sel-palet').innerHTML = opts;
   document.getElementById('sel-dest').innerHTML  = opts;
 
-  // Cargar catálogo de productos
+  // Cargar catálogo de productos (general + MAPE para poder ingresarlos al depósito)
   catalogo = await get('/api/productos');
+  const mapeCat = await get('/api/mape/productos').catch(() => []);
   document.getElementById('cat-search').value = '';
   hideCatDrop();
 
-  // Autocomplete del catálogo en los campos de texto
-  document.getElementById('dl-prod').innerHTML  = catalogo.map(p => `<option value="${e(p.nombre)}">`).join('');
-  document.getElementById('dl-color').innerHTML = [...new Set(catalogo.map(p => p.color).filter(Boolean))].map(c => `<option value="${e(c)}">`).join('');
+  // Autocomplete en los campos de texto: nombres/colores del catálogo general + MAPE
+  const nombres = [...new Set([...catalogo.map(p => p.nombre), ...mapeCat.map(p => p.nombre)].filter(Boolean))];
+  const colores = [...new Set([...catalogo.map(p => p.color), ...mapeCat.map(p => p.color)].filter(Boolean))];
+  document.getElementById('dl-prod').innerHTML  = nombres.map(n => `<option value="${e(n)}">`).join('');
+  document.getElementById('dl-color').innerHTML = colores.map(c => `<option value="${e(c)}">`).join('');
 
   // Restaurar tipo seleccionado visualmente
   document.querySelectorAll('.type-btn').forEach(b => b.className = 'type-btn');

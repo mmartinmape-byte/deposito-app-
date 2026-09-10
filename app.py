@@ -478,12 +478,21 @@ def crear_movimiento():
 # ── Helpers de stock ──────────────────────────────────────────────────────────
 
 def _en_catalogo(conn, producto, color):
-    """True si producto+color existe en el catálogo (comparación sin mayúsculas/espacios)."""
-    return conn.execute(text(
+    """True si producto+color existe en el catálogo general O en el de fabricación
+    nacional (MAPE). Comparación sin mayúsculas/espacios."""
+    params = {'p': producto or '', 'c': color or ''}
+    en_general = conn.execute(text(
         "SELECT 1 FROM productos "
         "WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(:p)) "
         "  AND LOWER(TRIM(COALESCE(color,''))) = LOWER(TRIM(:c))"
-    ), {'p': producto or '', 'c': color or ''}).fetchone() is not None
+    ), params).fetchone() is not None
+    if en_general:
+        return True
+    return conn.execute(text(
+        "SELECT 1 FROM mape_productos "
+        "WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(:p)) "
+        "  AND LOWER(TRIM(COALESCE(color,''))) = LOWER(TRIM(:c))"
+    ), params).fetchone() is not None
 
 
 def _add(conn, palet_id, producto, color, ppk, cajas):
