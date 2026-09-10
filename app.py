@@ -283,6 +283,23 @@ def migrate_db():
     except Exception as ex:
         print(f'  Aviso migración mape_productos: {ex}')
 
+    # Columna piezas_por_caja en movimientos (para contar egresos en piezas)
+    try:
+        if IS_PG:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    'ALTER TABLE movimientos ADD COLUMN IF NOT EXISTS piezas_por_caja INTEGER DEFAULT 0'
+                ))
+        else:
+            with engine.connect() as conn:
+                cols = [r[1] for r in conn.execute(text('PRAGMA table_info(movimientos)')).fetchall()]
+            if 'piezas_por_caja' not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE movimientos ADD COLUMN piezas_por_caja INTEGER DEFAULT 0'))
+                print('  Migración aplicada: columna piezas_por_caja en movimientos.')
+    except Exception as ex:
+        print(f'  Aviso migración movimientos.piezas_por_caja: {ex}')
+
 
 init_db()
 migrate_db()
@@ -409,23 +426,24 @@ def crear_movimiento():
                         f"'{d['producto']}{(' ' + d['color']) if d.get('color') else ''}' no está en el catálogo. "
                         'Cargalo primero en Catálogo para poder ingresarlo al depósito.'
                     )
-                _add(conn, d['palet_id'], d['producto'], d['color'], d.get('piezas_por_caja', 0), d['cajas'])
+                ppk_ing = d.get('piezas_por_caja', 0)
+                _add(conn, d['palet_id'], d['producto'], d['color'], ppk_ing, d['cajas'])
                 conn.execute(text(
-                    'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,observacion,fecha) '
-                    'VALUES (:t,:pid,:prod,:col,:c,:obs,:f)'
+                    'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,piezas_por_caja,observacion,fecha) '
+                    'VALUES (:t,:pid,:prod,:col,:c,:ppk,:obs,:f)'
                 ), {'t': tipo, 'pid': d['palet_id'], 'prod': d['producto'],
-                    'col': d['color'], 'c': d['cajas'],
+                    'col': d['color'], 'c': d['cajas'], 'ppk': ppk_ing,
                     'obs': d.get('observacion', ''), 'f': _now()})
 
             elif tipo == 'egreso':
-                ok = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], d.get('piezas_por_caja', 0))
+                ok, ppk_eg = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], d.get('piezas_por_caja', 0))
                 if not ok:
                     raise ValueError('Stock insuficiente para ese movimiento')
                 conn.execute(text(
-                    'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,observacion,fecha) '
-                    'VALUES (:t,:pid,:prod,:col,:c,:obs,:f)'
+                    'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,piezas_por_caja,observacion,fecha) '
+                    'VALUES (:t,:pid,:prod,:col,:c,:ppk,:obs,:f)'
                 ), {'t': tipo, 'pid': d['palet_id'], 'prod': d['producto'],
-                    'col': d['color'], 'c': d['cajas'],
+                    'col': d['color'], 'c': d['cajas'], 'ppk': ppk_eg,
                     'obs': d.get('observacion', ''), 'f': _now()})
 
             elif tipo == 'transferencia':
@@ -436,15 +454,16 @@ def crear_movimiento():
                 # así se distingue la variante correcta cuando un mismo producto+color
                 # existe con distinta cantidad de piezas por caja (ej: Negro 10 vs 20).
                 ppk = d.get('piezas_por_caja', 0)
-                ok  = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], ppk)
+                ok, ppk_usado = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], ppk)
                 if not ok:
                     raise ValueError('Stock insuficiente en el palet origen')
+                ppk = ppk or ppk_usado
                 _add(conn, dest, d['producto'], d['color'], ppk, d['cajas'])
                 conn.execute(text(
-                    'INSERT INTO movimientos (tipo,palet_id,palet_destino_id,producto,color,cajas,observacion,fecha) '
-                    'VALUES (:t,:pid,:dest,:prod,:col,:c,:obs,:f)'
+                    'INSERT INTO movimientos (tipo,palet_id,palet_destino_id,producto,color,cajas,piezas_por_caja,observacion,fecha) '
+                    'VALUES (:t,:pid,:dest,:prod,:col,:c,:ppk,:obs,:f)'
                 ), {'t': tipo, 'pid': d['palet_id'], 'dest': dest,
-                    'prod': d['producto'], 'col': d['color'], 'c': d['cajas'],
+                    'prod': d['producto'], 'col': d['color'], 'c': d['cajas'], 'ppk': ppk,
                     'obs': d.get('observacion', ''), 'f': _now()})
 
             elif tipo == 'ajuste':
@@ -459,12 +478,13 @@ def crear_movimiento():
                         f"'{d['producto']}{(' ' + d['color']) if d.get('color') else ''}' no está en el catálogo. "
                         'Cargalo primero en Catálogo para poder ingresarlo al depósito.'
                     )
-                _set(conn, d['palet_id'], d['producto'], d['color'], d.get('piezas_por_caja', 0), d['cajas'])
+                ppk_aj = d.get('piezas_por_caja', 0)
+                _set(conn, d['palet_id'], d['producto'], d['color'], ppk_aj, d['cajas'])
                 conn.execute(text(
-                    'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,observacion,fecha) '
-                    'VALUES (:t,:pid,:prod,:col,:c,:obs,:f)'
+                    'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,piezas_por_caja,observacion,fecha) '
+                    'VALUES (:t,:pid,:prod,:col,:c,:ppk,:obs,:f)'
                 ), {'t': tipo, 'pid': d['palet_id'], 'prod': d['producto'],
-                    'col': d['color'], 'c': d['cajas'],
+                    'col': d['color'], 'c': d['cajas'], 'ppk': ppk_aj,
                     'obs': d.get('observacion', ''), 'f': _now()})
 
         return jsonify({'ok': True})
@@ -514,22 +534,24 @@ def _add(conn, palet_id, producto, color, ppk, cajas):
 
 
 def _sub(conn, palet_id, producto, color, cajas, ppk=0):
-    # Si se especifica ppk busca exacto; si no, toma cualquier entrada del producto
+    # Devuelve (ok, piezas_por_caja de la entrada afectada). Si se especifica ppk
+    # busca exacto; si no, toma cualquier entrada del producto.
     if ppk:
-        q = 'SELECT id, cajas FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col AND piezas_por_caja=:ppk'
+        q = 'SELECT id, cajas, piezas_por_caja FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col AND piezas_por_caja=:ppk'
         params = {'pid': palet_id, 'prod': producto, 'col': color, 'ppk': ppk}
     else:
-        q = 'SELECT id, cajas FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col ORDER BY id LIMIT 1'
+        q = 'SELECT id, cajas, piezas_por_caja FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col ORDER BY id LIMIT 1'
         params = {'pid': palet_id, 'prod': producto, 'col': color}
     row = conn.execute(text(q), params).fetchone()
     if not row or row.cajas < cajas:
-        return False
+        return (False, 0)
+    ppk_usado = row.piezas_por_caja or 0
     nuevas = row.cajas - cajas
     if nuevas == 0:
         conn.execute(text('DELETE FROM stock WHERE id=:id'), {'id': row.id})
     else:
         conn.execute(text('UPDATE stock SET cajas=:c WHERE id=:id'), {'c': nuevas, 'id': row.id})
-    return True
+    return (True, ppk_usado)
 
 
 def _set(conn, palet_id, producto, color, ppk, cajas):
@@ -652,13 +674,21 @@ def get_proyecciones():
 
 @app.route('/api/mape/productos')
 def get_mape_productos():
-    """Lista los productos MAPE cruzando el stock del depósito por nombre+color."""
+    """Lista los productos MAPE cruzando el stock del depósito por nombre+color y
+    los retiros (egresos) de los últimos 30 días en piezas."""
+    desde = (datetime.now(ARG) - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
     with engine.connect() as conn:
         rows = conn.execute(text('''
             SELECT
                 m.id, m.nombre, m.sku, m.color,
                 m.ventas_mes_manual, m.ventas_ml,
-                COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito
+                COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito,
+                (SELECT COALESCE(SUM(mv.cajas * COALESCE(mv.piezas_por_caja, 0)), 0)
+                   FROM movimientos mv
+                  WHERE mv.tipo = 'egreso'
+                    AND LOWER(TRIM(mv.producto)) = LOWER(TRIM(m.nombre))
+                    AND LOWER(TRIM(COALESCE(mv.color, ''))) = LOWER(TRIM(m.color))
+                    AND mv.fecha >= :desde) AS egresos_mes
             FROM mape_productos m
             LEFT JOIN stock s
                    ON LOWER(TRIM(s.producto)) = LOWER(TRIM(m.nombre))
@@ -666,7 +696,7 @@ def get_mape_productos():
             GROUP BY m.id, m.nombre, m.sku, m.color,
                      m.ventas_mes_manual, m.ventas_ml
             ORDER BY m.nombre, m.color
-        ''')).fetchall()
+        '''), {'desde': desde}).fetchall()
     return jsonify([_row(r) for r in rows])
 
 
