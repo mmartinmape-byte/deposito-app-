@@ -253,6 +253,36 @@ def migrate_db():
     except Exception as ex:
         print(f'  Aviso migración ml_config: {ex}')
 
+    # Tabla mape_productos (catálogo aparte de fabricación nacional)
+    try:
+        with engine.begin() as conn:
+            if IS_PG:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS mape_productos (
+                        id                SERIAL PRIMARY KEY,
+                        nombre            TEXT NOT NULL,
+                        sku               TEXT NOT NULL,
+                        color             TEXT NOT NULL DEFAULT '',
+                        ventas_mes_manual INTEGER NOT NULL DEFAULT 0,
+                        ventas_ml         INTEGER NOT NULL DEFAULT 0,
+                        UNIQUE(sku, color)
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS mape_productos (
+                        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                        nombre            TEXT NOT NULL,
+                        sku               TEXT NOT NULL COLLATE NOCASE,
+                        color             TEXT NOT NULL DEFAULT '',
+                        ventas_mes_manual INTEGER NOT NULL DEFAULT 0,
+                        ventas_ml         INTEGER NOT NULL DEFAULT 0,
+                        UNIQUE(sku, color)
+                    )
+                """))
+    except Exception as ex:
+        print(f'  Aviso migración mape_productos: {ex}')
+
 
 init_db()
 migrate_db()
@@ -607,6 +637,90 @@ def get_proyecciones():
             ORDER BY pr.nombre, pr.color
         ''')).fetchall()
     return jsonify([_row(r) for r in rows])
+
+
+# ── Productos MAPE (fabricación nacional) ─────────────────────────────────────
+
+@app.route('/api/mape/productos')
+def get_mape_productos():
+    """Lista los productos MAPE cruzando el stock del depósito por nombre+color."""
+    with engine.connect() as conn:
+        rows = conn.execute(text('''
+            SELECT
+                m.id, m.nombre, m.sku, m.color,
+                m.ventas_mes_manual, m.ventas_ml,
+                COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito
+            FROM mape_productos m
+            LEFT JOIN stock s
+                   ON LOWER(TRIM(s.producto)) = LOWER(TRIM(m.nombre))
+                  AND LOWER(TRIM(s.color))    = LOWER(TRIM(m.color))
+            GROUP BY m.id, m.nombre, m.sku, m.color,
+                     m.ventas_mes_manual, m.ventas_ml
+            ORDER BY m.nombre, m.color
+        ''')).fetchall()
+    return jsonify([_row(r) for r in rows])
+
+
+@app.route('/api/mape/productos', methods=['POST'])
+def create_mape_producto():
+    data   = request.json
+    nombre = (data.get('nombre') or '').strip()
+    sku    = (data.get('sku') or '').strip().upper()
+    color  = (data.get('color') or '').strip()
+    if not nombre or not sku:
+        return jsonify({'error': 'Nombre y SKU son obligatorios'}), 400
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text('INSERT INTO mape_productos (nombre, sku, color) VALUES (:n, :s, :c)'),
+                {'n': nombre, 's': sku, 'c': color}
+            )
+        return jsonify({'ok': True})
+    except IntegrityError:
+        return jsonify({'error': 'Ya existe ese SKU con ese color'}), 400
+
+
+@app.route('/api/mape/productos/<int:pid>', methods=['PUT'])
+def update_mape_producto(pid):
+    data   = request.json
+    nombre = (data.get('nombre') or '').strip()
+    sku    = (data.get('sku') or '').strip().upper()
+    color  = (data.get('color') or '').strip()
+    if not nombre or not sku:
+        return jsonify({'error': 'Nombre y SKU son obligatorios'}), 400
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text('UPDATE mape_productos SET nombre=:n, sku=:s, color=:c WHERE id=:id'),
+                {'n': nombre, 's': sku, 'c': color, 'id': pid}
+            )
+        return jsonify({'ok': True})
+    except IntegrityError:
+        return jsonify({'error': 'Ya existe ese SKU con ese color'}), 400
+
+
+@app.route('/api/mape/productos/<int:pid>', methods=['DELETE'])
+def delete_mape_producto(pid):
+    with engine.begin() as conn:
+        conn.execute(text('DELETE FROM mape_productos WHERE id=:pid'), {'pid': pid})
+    return jsonify({'ok': True})
+
+
+@app.route('/api/mape/productos/<int:pid>', methods=['PATCH'])
+def update_mape_ventas(pid):
+    data = request.json
+    if 'ventas_mes_manual' not in data:
+        return jsonify({'error': 'No hay campos para actualizar'}), 400
+    try:
+        v = max(0, int(data['ventas_mes_manual']))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'ventas_mes_manual inválido'}), 400
+    with engine.begin() as conn:
+        conn.execute(
+            text('UPDATE mape_productos SET ventas_mes_manual=:v WHERE id=:id'),
+            {'v': v, 'id': pid}
+        )
+    return jsonify({'ok': True})
 
 
 @app.route('/api/export/stock')
@@ -1024,11 +1138,15 @@ def ml_ventas():
     try:
         with engine.begin() as conn:
             conn.execute(text('UPDATE productos SET ventas_ml=0'))
+            conn.execute(text('UPDATE mape_productos SET ventas_ml=0'))
             for key, v in por_sku.items():
                 if not v['sku']:
                     continue
                 conn.execute(text(
                     'UPDATE productos SET ventas_ml=:v WHERE UPPER(TRIM(sku))=:sku'
+                ), {'v': v['vendidos'], 'sku': key})
+                conn.execute(text(
+                    'UPDATE mape_productos SET ventas_ml=:v WHERE UPPER(TRIM(sku))=:sku'
                 ), {'v': v['vendidos'], 'sku': key})
     except Exception as ex:
         print(f'  Aviso persistencia ventas_ml: {ex}')
