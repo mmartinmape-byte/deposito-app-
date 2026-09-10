@@ -584,6 +584,7 @@ let tipo  = 'ingreso';
 let palets = [];
 let catalogo = [];
 let mape = [];
+let movCatalogo = [];  // catálogo general + MAPE, para el buscador del formulario de movimiento
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function goTo(id, btn) {
@@ -838,10 +839,10 @@ function _renderCatDrop(items) {
   } else {
     drop.innerHTML = items.map(p => `
       <div style="padding:.55rem .85rem;cursor:pointer;border-bottom:1px solid var(--g200);font-size:.83rem"
-           onmousedown="selectCatItem(${p.id})"
+           onmousedown="selectCatItem('${p.key}')"
            onmouseover="this.style.background='var(--blue-lt)'"
            onmouseout="this.style.background=''">
-        <strong>${e(p.sku)}</strong> — ${e(p.nombre)}${p.color ? ' <span style="color:var(--g400)">· ' + e(p.color) + '</span>' : ''}
+        <strong>${e(p.sku)}</strong> — ${e(p.nombre)}${p.color ? ' <span style="color:var(--g400)">· ' + e(p.color) + '</span>' : ''}${p.mape ? ' <span style="color:#2563eb;font-weight:600">🇦🇷 MAPE</span>' : ''}
       </div>`).join('');
   }
   drop.style.display = '';
@@ -850,7 +851,7 @@ function _renderCatDrop(items) {
 function onCatSearch() {
   const q = document.getElementById('cat-search').value.trim().toLowerCase();
   if (!q) { hideCatDrop(); return; }
-  const filtered = catalogo.filter(p =>
+  const filtered = movCatalogo.filter(p =>
     p.nombre.toLowerCase().includes(q) ||
     p.sku.toLowerCase().includes(q) ||
     (p.color && p.color.toLowerCase().includes(q))
@@ -860,11 +861,11 @@ function onCatSearch() {
 
 function onCatFocus() {
   const q = document.getElementById('cat-search').value.trim().toLowerCase();
-  const list = q ? catalogo.filter(p =>
+  const list = q ? movCatalogo.filter(p =>
     p.nombre.toLowerCase().includes(q) ||
     p.sku.toLowerCase().includes(q) ||
     (p.color && p.color.toLowerCase().includes(q))
-  ) : catalogo;
+  ) : movCatalogo;
   if (list.length) _renderCatDrop(list);
 }
 
@@ -873,8 +874,8 @@ function hideCatDrop() {
   if (d) d.style.display = 'none';
 }
 
-function selectCatItem(id) {
-  const p = catalogo.find(x => x.id === id);
+function selectCatItem(key) {
+  const p = movCatalogo.find(x => x.key === key);
   if (!p) return;
   document.getElementById('cat-search').value = `${p.sku} — ${p.nombre}${p.color ? ' · ' + p.color : ''}`;
   document.getElementById('inp-prod').value   = p.nombre;
@@ -911,6 +912,12 @@ async function loadMovForm() {
   const colores = [...new Set([...catalogo.map(p => p.color), ...mapeCat.map(p => p.color)].filter(Boolean))];
   document.getElementById('dl-prod').innerHTML  = nombres.map(n => `<option value="${e(n)}">`).join('');
   document.getElementById('dl-color').innerHTML = colores.map(c => `<option value="${e(c)}">`).join('');
+
+  // Lista combinada para el buscador "Buscar en catálogo" (general + MAPE, con clave única por origen)
+  movCatalogo = [
+    ...catalogo.map(p => ({ key: 'c' + p.id, sku: p.sku, nombre: p.nombre, color: p.color || '', mape: false })),
+    ...mapeCat.map(p  => ({ key: 'm' + p.id, sku: p.sku, nombre: p.nombre, color: p.color || '', mape: true  })),
+  ];
 
   // Restaurar tipo seleccionado visualmente
   document.querySelectorAll('.type-btn').forEach(b => b.className = 'type-btn');
