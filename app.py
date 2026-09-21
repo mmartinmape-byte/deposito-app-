@@ -701,36 +701,75 @@ def _parse_costo(valor):
         return 0.0
 
 
+# Clave para las secciones protegidas (tablero MAPE con costos/valorización).
+# Se define en Railway con la variable de entorno DEPOSITO_CLAVE (NO va en el repo).
+CLAVE_DEPOSITO = os.environ.get('DEPOSITO_CLAVE', 'matias5290')
+
+
+def _clave_ok():
+    """True si el request trae la clave correcta (header X-Clave, ?clave= o body JSON)."""
+    c = request.headers.get('X-Clave', '') or request.args.get('clave', '')
+    if not c and request.is_json:
+        c = (request.get_json(silent=True) or {}).get('clave', '') or ''
+    return c == CLAVE_DEPOSITO
+
+
+@app.route('/api/clave/verificar', methods=['POST'])
+def verificar_clave():
+    """El front verifica la clave contra el servidor antes de abrir una sección protegida."""
+    return jsonify({'ok': _clave_ok()})
+
+
+def _fetch_mape(include_costo=False):
+    """Lista los productos MAPE cruzando el stock del depósito por nombre+color y
+    los retiros (egresos) de los últimos 30 días en piezas. El costo solo se incluye
+    cuando include_costo=True (dato sensible, solo para el tablero protegido)."""
+    desde = (datetime.now(ARG) - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+    costo_col = 'm.costo,' if include_costo else ''
+    costo_grp = ', m.costo' if include_costo else ''
+    sql = f'''
+        SELECT
+            m.id, m.nombre, m.sku, m.color,
+            m.ventas_mes_manual, m.ventas_ml, {costo_col}
+            COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito,
+            (SELECT COALESCE(SUM(mv.cajas * COALESCE(mv.piezas_por_caja, 0)), 0)
+               FROM movimientos mv
+              WHERE mv.tipo = 'egreso'
+                AND LOWER(TRIM(mv.producto)) = LOWER(TRIM(m.nombre))
+                AND LOWER(TRIM(COALESCE(mv.color, ''))) = LOWER(TRIM(m.color))
+                AND mv.fecha >= :desde) AS egresos_mes
+        FROM mape_productos m
+        LEFT JOIN stock s
+               ON LOWER(TRIM(s.producto)) = LOWER(TRIM(m.nombre))
+              AND LOWER(TRIM(s.color))    = LOWER(TRIM(m.color))
+        GROUP BY m.id, m.nombre, m.sku, m.color,
+                 m.ventas_mes_manual, m.ventas_ml{costo_grp}
+        ORDER BY m.nombre, m.color
+    '''
+    with engine.connect() as conn:
+        rows = conn.execute(text(sql), {'desde': desde}).fetchall()
+    return [_row(r) for r in rows]
+
+
 @app.route('/api/mape/productos')
 def get_mape_productos():
-    """Lista los productos MAPE cruzando el stock del depósito por nombre+color y
-    los retiros (egresos) de los últimos 30 días en piezas."""
-    desde = (datetime.now(ARG) - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
-    with engine.connect() as conn:
-        rows = conn.execute(text('''
-            SELECT
-                m.id, m.nombre, m.sku, m.color,
-                m.ventas_mes_manual, m.ventas_ml, m.costo,
-                COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito,
-                (SELECT COALESCE(SUM(mv.cajas * COALESCE(mv.piezas_por_caja, 0)), 0)
-                   FROM movimientos mv
-                  WHERE mv.tipo = 'egreso'
-                    AND LOWER(TRIM(mv.producto)) = LOWER(TRIM(m.nombre))
-                    AND LOWER(TRIM(COALESCE(mv.color, ''))) = LOWER(TRIM(m.color))
-                    AND mv.fecha >= :desde) AS egresos_mes
-            FROM mape_productos m
-            LEFT JOIN stock s
-                   ON LOWER(TRIM(s.producto)) = LOWER(TRIM(m.nombre))
-                  AND LOWER(TRIM(s.color))    = LOWER(TRIM(m.color))
-            GROUP BY m.id, m.nombre, m.sku, m.color,
-                     m.ventas_mes_manual, m.ventas_ml, m.costo
-            ORDER BY m.nombre, m.color
-        '''), {'desde': desde}).fetchall()
-    return jsonify([_row(r) for r in rows])
+    """Catálogo MAPE público (sin costo). Lo usa el buscador de movimientos y la
+    vista mobile para poder ingresar productos MAPE al depósito."""
+    return jsonify(_fetch_mape(include_costo=False))
+
+
+@app.route('/api/mape/tablero')
+def get_mape_tablero():
+    """Tablero MAPE completo con costo y valorización. Protegido por clave."""
+    if not _clave_ok():
+        return jsonify({'error': 'Clave requerida'}), 401
+    return jsonify(_fetch_mape(include_costo=True))
 
 
 @app.route('/api/mape/productos', methods=['POST'])
 def create_mape_producto():
+    if not _clave_ok():
+        return jsonify({'error': 'Clave requerida'}), 401
     data   = request.json
     nombre = (data.get('nombre') or '').strip()
     sku    = (data.get('sku') or '').strip().upper()
@@ -751,6 +790,8 @@ def create_mape_producto():
 
 @app.route('/api/mape/productos/<int:pid>', methods=['PUT'])
 def update_mape_producto(pid):
+    if not _clave_ok():
+        return jsonify({'error': 'Clave requerida'}), 401
     data   = request.json
     nombre = (data.get('nombre') or '').strip()
     sku    = (data.get('sku') or '').strip().upper()
@@ -771,6 +812,8 @@ def update_mape_producto(pid):
 
 @app.route('/api/mape/productos/<int:pid>', methods=['DELETE'])
 def delete_mape_producto(pid):
+    if not _clave_ok():
+        return jsonify({'error': 'Clave requerida'}), 401
     with engine.begin() as conn:
         conn.execute(text('DELETE FROM mape_productos WHERE id=:pid'), {'pid': pid})
     return jsonify({'ok': True})
@@ -778,6 +821,8 @@ def delete_mape_producto(pid):
 
 @app.route('/api/mape/productos/<int:pid>', methods=['PATCH'])
 def update_mape_ventas(pid):
+    if not _clave_ok():
+        return jsonify({'error': 'Clave requerida'}), 401
     data = request.json or {}
     sets, params = [], {'id': pid}
 

@@ -207,7 +207,7 @@ input:focus,select:focus{border-color:var(--blue)}
     <button onclick="goTo('historial',this)">Historial</button>
     <button onclick="goToProtegido('inventario',this)">📊 Inventario</button>
     <button onclick="goToProtegido('proyecciones',this)">📈 Proyecciones</button>
-    <button onclick="goTo('mape',this)">🇦🇷 MAPE</button>
+    <button onclick="goToProtegido('mape',this)">🇦🇷 MAPE</button>
   </nav>
 </header>
 
@@ -441,6 +441,7 @@ input:focus,select:focus{border-color:var(--blue)}
       <span id="mape-ml-badge" style="font-size:.78rem;padding:3px 10px;border-radius:20px;background:#f3f4f6;color:#6b7280"></span>
       <button class="btn btn-primary" onclick="openModalMape()">+ Nuevo producto MAPE</button>
       <button class="btn btn-ghost" id="btn-mape-sync" onclick="syncMLMape()" title="Traer ventas ML últimos 30 días">🛒 Sincronizar ML</button>
+      <button class="btn btn-ghost" onclick="imprimirMape()" title="Imprimir planilla de stock para controlar en el depósito">🖨️ Imprimir stock</button>
       <button class="btn btn-ghost" onclick="loadMape()">↻ Actualizar</button>
     </div>
   </div>
@@ -604,26 +605,34 @@ function goTo(id, btn) {
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
+// Clave para las secciones protegidas (verificada contra el servidor).
+let _clave = '';
+try { _clave = sessionStorage.getItem('depClave') || ''; } catch (e) {}
+function authHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  if (_clave) h['X-Clave'] = _clave;
+  return h;
+}
 async function get(url) {
-  const r = await fetch(url);
+  const r = await fetch(url, { headers: authHeaders() });
   return r.json();
 }
 async function post(url, data) {
   const r = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(data)
   });
   return r.json();
 }
 async function del(url) {
-  const r = await fetch(url, { method: 'DELETE' });
+  const r = await fetch(url, { method: 'DELETE', headers: authHeaders() });
   return r.json();
 }
 async function put(url, data) {
   const r = await fetch(url, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(data)
   });
   return r.json();
@@ -1107,7 +1116,7 @@ async function resetTodo() {
 }
 
 // ── Secciones protegidas (Inventario + Proyecciones) ─────────────────────────
-let _invUnlocked = false;
+let _invUnlocked = !!_clave;   // si ya hay clave guardada en la sesión, queda desbloqueado
 let _pendingSec  = null;  // { secId, btn }
 
 function goToProtegido(secId, btn) {
@@ -1124,9 +1133,22 @@ function closePwdModal() {
   _pendingSec = null;
 }
 
-function checkPwd() {
-  if (document.getElementById('pwd-input').value === 'matias5290') {
+async function checkPwd() {
+  const val = document.getElementById('pwd-input').value;
+  let ok = false;
+  try {
+    const r = await fetch('/api/clave/verificar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clave: val })
+    }).then(res => res.json());
+    ok = !!(r && r.ok);
+  } catch (e) { ok = false; }
+
+  if (ok) {
+    _clave = val;
     _invUnlocked = true;
+    try { sessionStorage.setItem('depClave', val); } catch (e) {}
     document.getElementById('modal-pwd').classList.remove('open');
     if (_pendingSec) goTo(_pendingSec.secId, _pendingSec.btn);
     _pendingSec = null;
@@ -1439,9 +1461,19 @@ async function loadMape() {
     else { badge.textContent = '🔴 ML desconectado'; badge.style.background = '#fee2e2'; badge.style.color = '#991b1b'; }
   });
 
-  mape = await get('/api/mape/productos');
+  const resp = await get('/api/mape/tablero');
   const tbody   = document.getElementById('mape-tbody');
   const resumen = document.getElementById('mape-resumen');
+
+  if (resp && resp.error) {
+    // Clave inválida o vencida: volver a pedirla
+    _invUnlocked = false; _clave = '';
+    try { sessionStorage.removeItem('depClave'); } catch (e) {}
+    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--g400);padding:2rem">🔒 Acceso restringido. Recargá la página e ingresá la contraseña.</td></tr>`;
+    resumen.innerHTML = '';
+    return;
+  }
+  mape = resp;
 
   if (!mape.length) {
     tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--g400);padding:2rem">
@@ -1567,7 +1599,7 @@ async function updateMapeCosto(id, valor, inputEl) {
   inputEl.style.borderColor = 'var(--orange)';
   const res = await fetch('/api/mape/productos/' + id, {
     method: 'PATCH',
-    headers: {'Content-Type':'application/json'},
+    headers: authHeaders({'Content-Type':'application/json'}),
     body: JSON.stringify({ costo: parseFloat(valor) || 0 })
   }).then(r => r.json());
   if (res.ok) {
@@ -1582,7 +1614,7 @@ async function updateMapeVentas(id, valor, inputEl) {
   inputEl.style.borderColor = 'var(--orange)';
   const res = await fetch('/api/mape/productos/' + id, {
     method: 'PATCH',
-    headers: {'Content-Type':'application/json'},
+    headers: authHeaders({'Content-Type':'application/json'}),
     body: JSON.stringify({ ventas_mes_manual: parseInt(valor) || 0 })
   }).then(r => r.json());
   if (res.ok) {
@@ -1636,6 +1668,52 @@ async function borrarMape(id) {
   if (!confirm('¿Eliminar este producto MAPE?')) return;
   await del('/api/mape/productos/' + id);
   loadMape();
+}
+
+function imprimirMape() {
+  if (!mape || !mape.length) { alert('No hay productos MAPE para imprimir.'); return; }
+  const fecha = new Date().toLocaleDateString('es-AR');
+  const filas = mape.map(r => `
+    <tr>
+      <td>${e(r.nombre)}</td>
+      <td>${e(r.color || '—')}</td>
+      <td>${e(r.sku || '—')}</td>
+      <td class="num">${r.stock_deposito || 0}</td>
+      <td class="chk"></td>
+      <td class="obs"></td>
+    </tr>`).join('');
+  const totalPzs = mape.reduce((a, r) => a + (r.stock_deposito || 0), 0);
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+    <title>Control de stock MAPE</title>
+    <style>
+      *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;padding:24px}
+      h1{font-size:18px;margin:0} .sub{color:#555;font-size:12px;margin:3px 0 16px}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      th,td{border:1px solid #888;padding:6px 8px;text-align:left;vertical-align:middle}
+      th{background:#eee;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+      td.num{text-align:center;font-weight:bold} td.chk{width:90px} td.obs{width:150px}
+      tr{page-break-inside:avoid} tfoot td{font-weight:bold;background:#f6f6f6}
+      .tip{margin-top:14px;font-size:11px;color:#777}
+      @media print{ body{padding:10px} .noprint{display:none} }
+    </style></head><body>
+    <h1>Control de stock — Productos MAPE (fabricación nacional)</h1>
+    <div class="sub">Depósito · ${fecha} — Stock del sistema para controlar contra el conteo físico</div>
+    <table>
+      <thead><tr>
+        <th>Producto</th><th>Variante</th><th>SKU</th>
+        <th style="text-align:center">Stock sistema (pzs)</th>
+        <th>Conteo real</th><th>Observaciones</th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr><td colspan="3">TOTAL (${mape.length} productos)</td><td class="num">${totalPzs}</td><td></td><td></td></tr></tfoot>
+    </table>
+    <div class="tip">Recorré el depósito y anotá el conteo real; usá Observaciones para diferencias o roturas.</div>
+    <script>window.onload=function(){window.print()}<\/script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Habilitá las ventanas emergentes para imprimir.'); return; }
+  w.document.write(html);
+  w.document.close();
 }
 
 async function syncMLMape() {
