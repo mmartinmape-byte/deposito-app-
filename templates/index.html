@@ -453,6 +453,8 @@ input:focus,select:focus{border-color:var(--blue)}
           <th>Variante</th>
           <th>SKU</th>
           <th style="text-align:center">Stock depósito<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(piezas)</span></th>
+          <th style="text-align:center" title="Costo por pieza. Editable acá mismo.">Costo unit.<br><span style="font-weight:400;font-size:.65rem;text-transform:none">($ por pieza)</span></th>
+          <th style="text-align:center" title="Stock del depósito × costo unitario">Valorizado<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(stock × costo)</span></th>
           <th style="text-align:center">Ventas ML<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(últ. 30 días)</span></th>
           <th style="text-align:center" title="Suma de piezas retiradas del depósito (egresos) en los últimos 30 días — captura todos los canales de venta">Retiros depósito<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(últ. 30 días)</span></th>
           <th style="text-align:center" title="Venta manual, opcional. Solo se usa si es mayor que ML y que los retiros">Ventas/mes manual<br><span style="font-weight:400;font-size:.65rem;text-transform:none">(opcional)</span></th>
@@ -517,6 +519,11 @@ input:focus,select:focus{border-color:var(--blue)}
     <div class="form-g">
       <label>Variante <span style="font-weight:400;color:var(--g400)">(color, opcional)</span></label>
       <input type="text" id="mmape-color" placeholder="Ej: Blanco, Negro, Natural..."
+             onkeydown="if(event.key==='Enter')guardarMape()"/>
+    </div>
+    <div class="form-g">
+      <label>Costo unitario <span style="font-weight:400;color:var(--g400)">($ por pieza, opcional)</span></label>
+      <input type="number" id="mmape-costo" min="0" step="0.01" placeholder="Ej: 3500"
              onkeydown="if(event.key==='Enter')guardarMape()"/>
     </div>
     <div class="modal-foot">
@@ -1437,14 +1444,14 @@ async function loadMape() {
   const resumen = document.getElementById('mape-resumen');
 
   if (!mape.length) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--g400);padding:2rem">
+    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--g400);padding:2rem">
       No hay productos de fabricación nacional. Agregá el primero con <strong>+ Nuevo producto MAPE</strong>.
     </td></tr>`;
     resumen.innerHTML = '';
     return;
   }
 
-  let criticos = 0, alertas = 0, ok = 0, sinDatos = 0;
+  let criticos = 0, alertas = 0, ok = 0, sinDatos = 0, valorTotal = 0;
 
   const inpStyle = 'width:62px;padding:.3rem .3rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit;text-align:center';
 
@@ -1453,6 +1460,9 @@ async function loadMape() {
     const ventasML   = r.ventas_ml || 0;
     const egresos    = r.egresos_mes || 0;
     const ventasMan  = r.ventas_mes_manual || 0;
+    const costo      = r.costo || 0;
+    const valor      = stock * costo;
+    valorTotal += valor;
 
     // Ventas del mes = el mayor entre retiros del depósito y ML (y la manual si supera a ambos)
     const ventasTot  = Math.max(ventasML, egresos, ventasMan);
@@ -1496,11 +1506,26 @@ async function loadMape() {
              onfocus="this.style.borderColor='var(--blue)'"
              onblur="this.style.borderColor='var(--g200)'"/>`;
 
+    const costoInp = `<div style="display:flex;align-items:center;gap:.3rem;justify-content:center">
+           <span style="color:var(--g400)">$</span>
+           <input type="number" value="${costo}" min="0" step="0.01"
+                  style="width:92px;padding:.3rem .5rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit"
+                  onchange="updateMapeCosto(${r.id},this.value,this)"
+                  onfocus="this.style.borderColor='var(--blue)'"
+                  onblur="this.style.borderColor='var(--g200)'"/>
+         </div>`;
+
+    const valorCell = valor > 0
+      ? `<strong style="color:var(--blue-dk)">$${valor.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</strong>`
+      : '<span style="color:var(--g400)">—</span>';
+
     return `<tr style="${rowBg}">
       <td style="font-weight:500;color:var(--g900)">${e(r.nombre)}</td>
       <td>${e(r.color || '—')}</td>
       <td>${r.sku ? `<span class="badge b-transferencia">${e(r.sku)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
       <td style="text-align:center;font-weight:600;color:${stock > 0 ? 'var(--blue-dk)' : 'var(--g400)'}">${stock}</td>
+      <td style="text-align:center">${costoInp}</td>
+      <td style="text-align:center">${valorCell}</td>
       <td style="text-align:center">${mlCell}</td>
       <td style="text-align:center">${egCell}</td>
       <td style="text-align:center">${manInp}</td>
@@ -1531,7 +1556,26 @@ async function loadMape() {
         <div class="stat-lbl">⚪ Sin datos de ventas</div>
         <div class="stat-val" style="color:var(--g400)">${sinDatos}</div>
       </div>
+      <div class="stat" style="border-left:4px solid var(--blue-dk)">
+        <div class="stat-lbl">💰 Valor total del stock MAPE</div>
+        <div class="stat-val" style="color:var(--blue-dk)">$${valorTotal.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+      </div>
     </div>`;
+}
+
+async function updateMapeCosto(id, valor, inputEl) {
+  inputEl.style.borderColor = 'var(--orange)';
+  const res = await fetch('/api/mape/productos/' + id, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ costo: parseFloat(valor) || 0 })
+  }).then(r => r.json());
+  if (res.ok) {
+    inputEl.style.borderColor = 'var(--green)';
+    setTimeout(loadMape, 500);
+  } else {
+    inputEl.style.borderColor = 'var(--red)';
+  }
 }
 
 async function updateMapeVentas(id, valor, inputEl) {
@@ -1555,6 +1599,7 @@ function openModalMape(prod = null) {
   document.getElementById('mmape-sku').value     = edit ? prod.sku : '';
   document.getElementById('mmape-nombre').value  = edit ? prod.nombre : '';
   document.getElementById('mmape-color').value   = edit ? (prod.color || '') : '';
+  document.getElementById('mmape-costo').value   = edit ? (prod.costo || '') : '';
   document.getElementById('mmape-titulo').textContent   = edit ? 'Editar producto MAPE' : 'Nuevo producto MAPE';
   document.getElementById('mmape-save-btn').textContent = edit ? 'Actualizar' : 'Guardar';
   document.getElementById('mmape-alert').classList.remove('show');
@@ -1576,11 +1621,12 @@ async function guardarMape() {
   const sku    = document.getElementById('mmape-sku').value.trim().toUpperCase();
   const nombre = document.getElementById('mmape-nombre').value.trim();
   const color  = document.getElementById('mmape-color').value.trim();
+  const costo  = parseFloat(document.getElementById('mmape-costo').value) || 0;
   const alertEl = document.getElementById('mmape-alert');
   if (!sku || !nombre) { showAlert(alertEl, 'err', 'SKU y Nombre son obligatorios.'); return; }
   const res = id
-    ? await put('/api/mape/productos/' + id, { sku, nombre, color })
-    : await post('/api/mape/productos', { sku, nombre, color });
+    ? await put('/api/mape/productos/' + id, { sku, nombre, color, costo })
+    : await post('/api/mape/productos', { sku, nombre, color, costo });
   if (res.error) { showAlert(alertEl, 'err', res.error); return; }
   closeModalMape();
   loadMape();

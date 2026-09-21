@@ -265,6 +265,7 @@ def migrate_db():
                         color             TEXT NOT NULL DEFAULT '',
                         ventas_mes_manual INTEGER NOT NULL DEFAULT 0,
                         ventas_ml         INTEGER NOT NULL DEFAULT 0,
+                        costo             NUMERIC NOT NULL DEFAULT 0,
                         UNIQUE(sku, color)
                     )
                 """))
@@ -277,6 +278,7 @@ def migrate_db():
                         color             TEXT NOT NULL DEFAULT '',
                         ventas_mes_manual INTEGER NOT NULL DEFAULT 0,
                         ventas_ml         INTEGER NOT NULL DEFAULT 0,
+                        costo             REAL NOT NULL DEFAULT 0,
                         UNIQUE(sku, color)
                     )
                 """))
@@ -299,6 +301,23 @@ def migrate_db():
                 print('  Migración aplicada: columna piezas_por_caja en movimientos.')
     except Exception as ex:
         print(f'  Aviso migración movimientos.piezas_por_caja: {ex}')
+
+    # Columna costo en mape_productos (para valorizar el stock de fabricación nacional)
+    try:
+        if IS_PG:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    'ALTER TABLE mape_productos ADD COLUMN IF NOT EXISTS costo NUMERIC NOT NULL DEFAULT 0'
+                ))
+        else:
+            with engine.connect() as conn:
+                cols = [r[1] for r in conn.execute(text('PRAGMA table_info(mape_productos)')).fetchall()]
+            if 'costo' not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE mape_productos ADD COLUMN costo REAL NOT NULL DEFAULT 0'))
+                print('  Migración aplicada: columna costo en mape_productos.')
+    except Exception as ex:
+        print(f'  Aviso migración mape_productos.costo: {ex}')
 
 
 init_db()
@@ -672,6 +691,16 @@ def get_proyecciones():
 
 # ── Productos MAPE (fabricación nacional) ─────────────────────────────────────
 
+def _parse_costo(valor):
+    """Convierte a float un costo que puede venir con coma decimal o vacío."""
+    if valor is None:
+        return 0.0
+    try:
+        return max(0.0, float(str(valor).replace(',', '.').strip() or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @app.route('/api/mape/productos')
 def get_mape_productos():
     """Lista los productos MAPE cruzando el stock del depósito por nombre+color y
@@ -681,7 +710,7 @@ def get_mape_productos():
         rows = conn.execute(text('''
             SELECT
                 m.id, m.nombre, m.sku, m.color,
-                m.ventas_mes_manual, m.ventas_ml,
+                m.ventas_mes_manual, m.ventas_ml, m.costo,
                 COALESCE(SUM(s.cajas * s.piezas_por_caja), 0) AS stock_deposito,
                 (SELECT COALESCE(SUM(mv.cajas * COALESCE(mv.piezas_por_caja, 0)), 0)
                    FROM movimientos mv
@@ -694,7 +723,7 @@ def get_mape_productos():
                    ON LOWER(TRIM(s.producto)) = LOWER(TRIM(m.nombre))
                   AND LOWER(TRIM(s.color))    = LOWER(TRIM(m.color))
             GROUP BY m.id, m.nombre, m.sku, m.color,
-                     m.ventas_mes_manual, m.ventas_ml
+                     m.ventas_mes_manual, m.ventas_ml, m.costo
             ORDER BY m.nombre, m.color
         '''), {'desde': desde}).fetchall()
     return jsonify([_row(r) for r in rows])
@@ -706,13 +735,14 @@ def create_mape_producto():
     nombre = (data.get('nombre') or '').strip()
     sku    = (data.get('sku') or '').strip().upper()
     color  = (data.get('color') or '').strip()
+    costo  = _parse_costo(data.get('costo'))
     if not nombre or not sku:
         return jsonify({'error': 'Nombre y SKU son obligatorios'}), 400
     try:
         with engine.begin() as conn:
             conn.execute(
-                text('INSERT INTO mape_productos (nombre, sku, color) VALUES (:n, :s, :c)'),
-                {'n': nombre, 's': sku, 'c': color}
+                text('INSERT INTO mape_productos (nombre, sku, color, costo) VALUES (:n, :s, :c, :co)'),
+                {'n': nombre, 's': sku, 'c': color, 'co': costo}
             )
         return jsonify({'ok': True})
     except IntegrityError:
@@ -725,13 +755,14 @@ def update_mape_producto(pid):
     nombre = (data.get('nombre') or '').strip()
     sku    = (data.get('sku') or '').strip().upper()
     color  = (data.get('color') or '').strip()
+    costo  = _parse_costo(data.get('costo'))
     if not nombre or not sku:
         return jsonify({'error': 'Nombre y SKU son obligatorios'}), 400
     try:
         with engine.begin() as conn:
             conn.execute(
-                text('UPDATE mape_productos SET nombre=:n, sku=:s, color=:c WHERE id=:id'),
-                {'n': nombre, 's': sku, 'c': color, 'id': pid}
+                text('UPDATE mape_productos SET nombre=:n, sku=:s, color=:c, costo=:co WHERE id=:id'),
+                {'n': nombre, 's': sku, 'c': color, 'co': costo, 'id': pid}
             )
         return jsonify({'ok': True})
     except IntegrityError:
@@ -747,17 +778,27 @@ def delete_mape_producto(pid):
 
 @app.route('/api/mape/productos/<int:pid>', methods=['PATCH'])
 def update_mape_ventas(pid):
-    data = request.json
-    if 'ventas_mes_manual' not in data:
+    data = request.json or {}
+    sets, params = [], {'id': pid}
+
+    if 'ventas_mes_manual' in data:
+        try:
+            params['v'] = max(0, int(data['ventas_mes_manual']))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'ventas_mes_manual inválido'}), 400
+        sets.append('ventas_mes_manual=:v')
+
+    if 'costo' in data:
+        params['co'] = _parse_costo(data['costo'])
+        sets.append('costo=:co')
+
+    if not sets:
         return jsonify({'error': 'No hay campos para actualizar'}), 400
-    try:
-        v = max(0, int(data['ventas_mes_manual']))
-    except (TypeError, ValueError):
-        return jsonify({'error': 'ventas_mes_manual inválido'}), 400
+
     with engine.begin() as conn:
         conn.execute(
-            text('UPDATE mape_productos SET ventas_mes_manual=:v WHERE id=:id'),
-            {'v': v, 'id': pid}
+            text('UPDATE mape_productos SET ' + ', '.join(sets) + ' WHERE id=:id'),
+            params
         )
     return jsonify({'ok': True})
 
