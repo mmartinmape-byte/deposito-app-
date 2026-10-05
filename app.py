@@ -16,6 +16,9 @@ _raw = os.environ.get('DATABASE_URL', '')
 if _raw:
     # Railway a veces da "postgres://" pero SQLAlchemy necesita "postgresql://"
     DATABASE_URL = _raw.replace('postgres://', 'postgresql://', 1)
+    # SQLAlchemy 2.1 usa psycopg 3 por defecto; acá solo está psycopg2-binary
+    if DATABASE_URL.startswith('postgresql://'):
+        DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+psycopg2://', 1)
 else:
     _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deposito.db')
     DATABASE_URL = f'sqlite:///{_path}'
@@ -445,7 +448,9 @@ def crear_movimiento():
                         f"'{d['producto']}{(' ' + d['color']) if d.get('color') else ''}' no está en el catálogo. "
                         'Cargalo primero en Catálogo para poder ingresarlo al depósito.'
                     )
-                ppk_ing = d.get('piezas_por_caja', 0)
+                ppk_ing = int(d.get('piezas_por_caja') or 0)
+                if ppk_ing < 1:
+                    raise ValueError('Indicá las piezas por caja (mínimo 1).')
                 _add(conn, d['palet_id'], d['producto'], d['color'], ppk_ing, d['cajas'])
                 conn.execute(text(
                     'INSERT INTO movimientos (tipo,palet_id,producto,color,cajas,piezas_por_caja,observacion,fecha) '
@@ -455,7 +460,7 @@ def crear_movimiento():
                     'obs': d.get('observacion', ''), 'f': _now()})
 
             elif tipo == 'egreso':
-                ok, ppk_eg = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], d.get('piezas_por_caja', 0))
+                ok, ppk_eg = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], d.get('piezas_por_caja'))
                 if not ok:
                     raise ValueError('Stock insuficiente para ese movimiento')
                 conn.execute(text(
@@ -472,11 +477,9 @@ def crear_movimiento():
                 # Usar las piezas/caja que vienen del formulario (igual que el egreso):
                 # así se distingue la variante correcta cuando un mismo producto+color
                 # existe con distinta cantidad de piezas por caja (ej: Negro 10 vs 20).
-                ppk = d.get('piezas_por_caja', 0)
-                ok, ppk_usado = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], ppk)
+                ok, ppk = _sub(conn, d['palet_id'], d['producto'], d['color'], d['cajas'], d.get('piezas_por_caja'))
                 if not ok:
                     raise ValueError('Stock insuficiente en el palet origen')
-                ppk = ppk or ppk_usado
                 _add(conn, dest, d['producto'], d['color'], ppk, d['cajas'])
                 conn.execute(text(
                     'INSERT INTO movimientos (tipo,palet_id,palet_destino_id,producto,color,cajas,piezas_por_caja,observacion,fecha) '
@@ -552,16 +555,22 @@ def _add(conn, palet_id, producto, color, ppk, cajas):
         )
 
 
-def _sub(conn, palet_id, producto, color, cajas, ppk=0):
+def _sub(conn, palet_id, producto, color, cajas, ppk=None):
     # Devuelve (ok, piezas_por_caja de la entrada afectada). Si se especifica ppk
-    # busca exacto; si no, toma cualquier entrada del producto.
-    if ppk:
-        q = 'SELECT id, cajas, piezas_por_caja FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col AND piezas_por_caja=:ppk'
-        params = {'pid': palet_id, 'prod': producto, 'col': color, 'ppk': ppk}
-    else:
-        q = 'SELECT id, cajas, piezas_por_caja FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col ORDER BY id LIMIT 1'
-        params = {'pid': palet_id, 'prod': producto, 'col': color}
-    row = conn.execute(text(q), params).fetchone()
+    # (incluido 0) busca exacto; si no, toma cualquier entrada del producto.
+    # Ojo: 0 es una variante válida (stock cargado sin piezas/caja); tratarlo como
+    # "no especificado" descontaba de la variante con piezas.
+    params = {'pid': palet_id, 'prod': producto, 'col': color, 'ppk': int(ppk or 0)}
+    row = None
+    if ppk is not None:
+        row = conn.execute(text(
+            'SELECT id, cajas, piezas_por_caja FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col AND piezas_por_caja=:ppk'
+        ), params).fetchone()
+    if row is None and not ppk:
+        # Piezas/caja no indicadas (campo vacío) y no hay variante con 0: tomar la primera
+        row = conn.execute(text(
+            'SELECT id, cajas, piezas_por_caja FROM stock WHERE palet_id=:pid AND producto=:prod AND color=:col ORDER BY id LIMIT 1'
+        ), params).fetchone()
     if not row or row.cajas < cajas:
         return (False, 0)
     ppk_usado = row.piezas_por_caja or 0

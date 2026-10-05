@@ -725,7 +725,7 @@ async function submitMovimiento(tipo) {
 
   // Validar que no supere el stock disponible en egreso
   if (tipo === 'egreso') {
-    const item = egStockItems.find(i => i.producto === producto && i.color === color);
+    const item = egStockItems.find(i => i.producto === producto && i.color === color && (i.piezas_por_caja || 0) === ppk);
     if (item && cajas > item.cajas) {
       return toast(`Máximo ${item.cajas} cajas disponibles`, 'err');
     }
