@@ -451,6 +451,7 @@ input:focus,select:focus{border-color:var(--blue)}
     <table>
       <thead>
         <tr>
+          <th>Foto</th>
           <th>Producto</th>
           <th>Variante</th>
           <th>SKU</th>
@@ -814,8 +815,17 @@ async function loadCatalogoSection() {
 
 // Foto del producto (se ve en el celular, pestaña SKU). Una por SKU.
 let _fotoSkuDestino = '';
+let _fotoSeccionDestino = 'catalogo';
 function elegirFotoCatalogo(id) {
   _fotoSkuDestino = catalogo.find(x => x.id === id)?.sku || '';
+  _fotoSeccionDestino = 'catalogo';
+  document.getElementById('cat-foto-input').click();
+}
+
+function elegirFotoMape(id) {
+  _fotoSkuDestino = mape.find(x => x.id === id)?.sku || '';
+  if (!_fotoSkuDestino) return;
+  _fotoSeccionDestino = 'mape';
   document.getElementById('cat-foto-input').click();
 }
 
@@ -841,11 +851,14 @@ async function subirFotoCatalogo(input) {
   const file = input.files[0];
   input.value = '';
   if (!file || !_fotoSkuDestino) return;
+  const sku = _fotoSkuDestino;
+  const seccion = _fotoSeccionDestino;
   try {
     const imagen = await achicarImagen(file, 900, 0.8);
-    const r = await post('/api/fotos/' + encodeURIComponent(_fotoSkuDestino), { imagen });
+    const r = await post('/api/fotos/' + encodeURIComponent(sku), { imagen });
     if (r.error) throw new Error(r.error);
-    loadCatalogoSection();
+    if (seccion === 'mape') await loadMape();
+    else await loadCatalogoSection();
   } catch (err) {
     alert('Error: ' + err.message);
   }
@@ -1507,7 +1520,9 @@ async function loadMape() {
     else { badge.textContent = '🔴 ML desconectado'; badge.style.background = '#fee2e2'; badge.style.color = '#991b1b'; }
   });
 
-  const resp = await get('/api/mape/tablero');
+  const [resp, fotos] = await Promise.all([get('/api/mape/tablero'), get('/api/fotos')]);
+  const conFoto = new Set(Array.isArray(fotos) ? fotos.map(sku => sku.toUpperCase()) : []);
+  const fotoVersion = Date.now();
   const tbody   = document.getElementById('mape-tbody');
   const resumen = document.getElementById('mape-resumen');
 
@@ -1515,14 +1530,14 @@ async function loadMape() {
     // Clave inválida o vencida: volver a pedirla
     _invUnlocked = false; _clave = '';
     try { sessionStorage.removeItem('depClave'); } catch (e) {}
-    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--g400);padding:2rem">🔒 Acceso restringido. Recargá la página e ingresá la contraseña.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--g400);padding:2rem">🔒 Acceso restringido. Recargá la página e ingresá la contraseña.</td></tr>`;
     resumen.innerHTML = '';
     return;
   }
   mape = resp;
 
   if (!mape.length) {
-    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--g400);padding:2rem">
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--g400);padding:2rem">
       No hay productos de fabricación nacional. Agregá el primero con <strong>+ Nuevo producto MAPE</strong>.
     </td></tr>`;
     resumen.innerHTML = '';
@@ -1597,7 +1612,19 @@ async function loadMape() {
       ? `<strong style="color:var(--blue-dk)">$${valor.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</strong>`
       : '<span style="color:var(--g400)">—</span>';
 
+    const fotoCell = !r.sku ? '<span style="color:var(--g400)">—</span>' :
+      `<button type="button" class="btn btn-ghost" onclick="elegirFotoMape(${r.id})"
+               title="${conFoto.has(r.sku.toUpperCase()) ? 'Cambiar foto' : 'Cargar foto'}"
+               style="padding:4px;min-width:68px;min-height:68px">
+        ${conFoto.has(r.sku.toUpperCase())
+          ? `<img src="/api/fotos/${encodeURIComponent(r.sku)}?t=${fotoVersion}"
+                  alt="Foto del producto" loading="lazy"
+                  style="width:64px;height:64px;object-fit:contain;border-radius:6px;display:block;background:#fff">`
+          : '📷'}
+      </button>`;
+
     return `<tr style="${rowBg}">
+      <td>${fotoCell}</td>
       <td style="font-weight:500;color:var(--g900)">${e(r.nombre)}</td>
       <td>${e(r.color || '—')}</td>
       <td>${r.sku ? `<span class="badge b-transferencia">${e(r.sku)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
