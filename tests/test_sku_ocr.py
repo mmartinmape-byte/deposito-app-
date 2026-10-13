@@ -63,6 +63,17 @@ class SkuOCRTest(unittest.TestCase):
         self.assertEqual(data['leido'], 'U8BU75174')
         self.assertEqual(data['resultados'][0]['sku'], 'UBBU75174')
 
+    def test_glued_code_label_with_unknown_or_misread_value(self):
+        data = self.read('CODEQCDW000696')
+        self.assertEqual(data['leido'], 'QCDW000696')
+        data = self.read('CODEU8BU75174')
+        self.assertEqual(data['leido'], 'U8BU75174')
+        self.assertFalse(data['exacto'])
+        self.assertEqual(data['resultados'][0]['sku'], 'UBBU75174')
+        data = self.client.get('/api/sku/buscar', query_string={'q': 'CODEQCDW000696'}).get_json()
+        self.assertEqual(data['leido'], 'QCDW000696')
+        self.assertEqual(deposito._sin_prefijo_etiqueta('CODE123', {'CODE123'}), 'CODE123')
+
     def test_multiple_codes_not_silently_selected(self):
         data = self.read('UBBU75174\nAB-123')
         self.assertEqual({p['sku'] for p in data['resultados']}, {'UBBU75174', 'AB-123'})

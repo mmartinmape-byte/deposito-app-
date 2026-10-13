@@ -1192,9 +1192,23 @@ def buscar_sku():
     q = request.args.get('q', '').strip()
     # CODE y SKU son etiquetas equivalentes, no forman parte del código.
     q = re.sub(r'^(?:SKU|CODE)\b[\s:#=\-]*', '', q, flags=re.IGNORECASE).strip()
+    conocidos = {_norm_sku(p['sku']) for p in _catalogo_skus()}
+    q = _sin_prefijo_etiqueta(q, conocidos)
     if not q:
         return jsonify({'leido': '', 'exacto': False, 'resultados': []})
     return jsonify({'leido': q.upper(), **_resolver_sku(q)})
+
+
+def _sin_prefijo_etiqueta(codigo, conocidos):
+    """Quita CODE/SKU pegado por OCR, aun cuando el valor tenga errores de lectura."""
+    normalizado = _norm_sku(codigo)
+    if normalizado in conocidos:
+        return codigo
+    for prefijo in ('CODE', 'SKU'):
+        resto = normalizado[len(prefijo):]
+        if normalizado.startswith(prefijo) and len(resto) >= 3 and any(c.isdigit() for c in resto):
+            return resto
+    return codigo
 
 
 @app.route('/api/sku/leer', methods=['POST'])
@@ -1214,17 +1228,9 @@ def leer_sku():
             for fin in range(i + 1, min(i + 4, len(partes)) + 1):
                 if any(p in ('SKU', 'CODE') for p in partes[i:fin]):
                     break
-                candidato = ''.join(partes[i:fin])
+                candidato = _sin_prefijo_etiqueta(''.join(partes[i:fin]), conocidos)
                 if 3 <= len(candidato) <= 64 and candidato not in candidatos:
                     candidatos.append(candidato)
-                # El OCR a veces pega la etiqueta al código (CODEUBBU75174).
-                # Conservar un SKU real que ya incluya ese prefijo.
-                if candidato not in conocidos:
-                    for prefijo in ('CODE', 'SKU'):
-                        if candidato.startswith(prefijo) and candidato[len(prefijo):] in conocidos:
-                            limpio = candidato[len(prefijo):]
-                            if limpio not in candidatos:
-                                candidatos.append(limpio)
 
     exactos = [c for c in candidatos if c in conocidos]
     # Una foto con varios códigos debe mostrar todas las coincidencias, sin elegir a ciegas.
