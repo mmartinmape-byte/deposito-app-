@@ -99,6 +99,23 @@ main:has(#sec-proyecciones.show){max-width:min(1760px,98vw)}
 #sec-proyecciones th{padding:.7rem .55rem;letter-spacing:.4px}
 #sec-proyecciones td{padding:.6rem .55rem}
 
+/* MAPE: aprovechar el ancho disponible y distribuir todas las columnas. */
+main:has(#sec-mape.show){max-width:none;width:100%;padding:1.25rem clamp(12px,1.5vw,24px)}
+#sec-mape table{table-layout:fixed;font-size:.8rem}
+#sec-mape th{padding:.65rem .3rem;letter-spacing:.2px;overflow-wrap:anywhere}
+#sec-mape td{padding:.5rem .3rem;overflow-wrap:anywhere}
+#sec-mape .badge{max-width:100%;padding:.15rem .3rem;white-space:normal;overflow-wrap:anywhere}
+#sec-mape .mape-foto{padding:2px;min-width:0;min-height:0}
+#sec-mape .mape-foto img{width:clamp(32px,3vw,48px);height:clamp(32px,3vw,48px);object-fit:contain;border-radius:6px;display:block;background:#fff}
+#sec-mape .mape-costo{display:flex;align-items:center;gap:.2rem;justify-content:center}
+#sec-mape .mape-costo input{width:100%;min-width:0;max-width:84px;padding:.3rem .2rem;border:1.5px solid var(--g200);border-radius:8px;font:inherit}
+#sec-mape .mape-ventas-input{width:100%;max-width:62px;min-width:0}
+#sec-mape .mape-acciones{display:flex;flex-direction:column;gap:.3rem}
+#sec-mape .mape-acciones .btn{justify-content:center;width:100%;padding:.35rem .15rem;font-size:.75rem}
+#sec-mape .toolbar>div:last-child{flex-wrap:wrap}
+#sec-mape .stat{padding:1rem .8rem;min-width:0}
+#sec-mape .stat-val{font-size:clamp(1.25rem,1.6vw,2rem);overflow-wrap:anywhere}
+
 /* ── Badges ────────────────────────────────────────────────────────────────── */
 .badge{display:inline-block;padding:.18rem .6rem;border-radius:20px;font-size:.7rem;font-weight:600}
 .b-ingreso{background:var(--green-lt);color:var(--green)}
@@ -449,6 +466,12 @@ input:focus,select:focus{border-color:var(--blue)}
   <div id="mape-resumen"></div>
   <div class="table-wrap">
     <table>
+      <colgroup>
+        <col style="width:5%"><col style="width:17%"><col style="width:6%">
+        <col style="width:10%"><col style="width:6%"><col style="width:8%">
+        <col style="width:8%"><col style="width:6%"><col style="width:7%">
+        <col style="width:7%"><col style="width:7%"><col style="width:6%"><col style="width:7%">
+      </colgroup>
       <thead>
         <tr>
           <th>Foto</th>
@@ -1546,8 +1569,6 @@ async function loadMape() {
 
   let criticos = 0, alertas = 0, ok = 0, sinDatos = 0, valorTotal = 0;
 
-  const inpStyle = 'width:62px;padding:.3rem .3rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit;text-align:center';
-
   tbody.innerHTML = mape.map(r => {
     const stock      = r.stock_deposito || 0;
     const ventasML   = r.ventas_ml || 0;
@@ -1593,16 +1614,15 @@ async function loadMape() {
       ? `<span style="font-weight:700;color:var(--blue-dk)">${egresos}</span>`
       : '<span style="color:var(--g400)">0</span>';
 
-    const manInp = `<input type="number" value="${ventasMan}" min="0"
-             style="${inpStyle}"
+    const manInp = `<input type="number" class="mape-ventas-input" value="${ventasMan}" min="0"
+             style="padding:.3rem .2rem;border:1.5px solid var(--g200);border-radius:8px;font:inherit;text-align:center"
              onchange="updateMapeVentas(${r.id},this.value,this)"
              onfocus="this.style.borderColor='var(--blue)'"
              onblur="this.style.borderColor='var(--g200)'"/>`;
 
-    const costoInp = `<div style="display:flex;align-items:center;gap:.3rem;justify-content:center">
+    const costoInp = `<div class="mape-costo">
            <span style="color:var(--g400)">$</span>
            <input type="number" value="${costo}" min="0" step="0.01"
-                  style="width:92px;padding:.3rem .5rem;border:1.5px solid var(--g200);border-radius:8px;font-size:.83rem;font-family:inherit"
                   onchange="updateMapeCosto(${r.id},this.value,this)"
                   onfocus="this.style.borderColor='var(--blue)'"
                   onblur="this.style.borderColor='var(--g200)'"/>
@@ -1613,13 +1633,11 @@ async function loadMape() {
       : '<span style="color:var(--g400)">—</span>';
 
     const fotoCell = !r.sku ? '<span style="color:var(--g400)">—</span>' :
-      `<button type="button" class="btn btn-ghost" onclick="elegirFotoMape(${r.id})"
-               title="${conFoto.has(r.sku.toUpperCase()) ? 'Cambiar foto' : 'Cargar foto'}"
-               style="padding:4px;min-width:68px;min-height:68px">
+      `<button type="button" class="btn btn-ghost mape-foto" onclick="elegirFotoMape(${r.id})"
+               title="${conFoto.has(r.sku.toUpperCase()) ? 'Cambiar foto' : 'Cargar foto'}">
         ${conFoto.has(r.sku.toUpperCase())
           ? `<img src="/api/fotos/${encodeURIComponent(r.sku)}?t=${fotoVersion}"
-                  alt="Foto del producto" loading="lazy"
-                  style="width:64px;height:64px;object-fit:contain;border-radius:6px;display:block;background:#fff">`
+                  alt="Foto del producto" loading="lazy">`
           : '📷'}
       </button>`;
 
@@ -1636,10 +1654,10 @@ async function loadMape() {
       <td style="text-align:center">${manInp}</td>
       <td style="text-align:center;font-weight:700;font-size:1rem;color:var(--blue-dk)">${ventasTot}<br><small style="font-weight:400;font-size:.62rem">${fuente ? fuente.replace(' · ','') : ''}</small></td>
       <td style="text-align:center;line-height:1.4">${estadoHtml}</td>
-      <td style="display:flex;gap:.4rem">
+      <td><div class="mape-acciones">
         <button class="btn btn-ghost" onclick="editarMape(${r.id})">Editar</button>
         <button class="btn btn-danger" onclick="borrarMape(${r.id})">Eliminar</button>
-      </td>
+      </div></td>
     </tr>`;
   }).join('');
 
