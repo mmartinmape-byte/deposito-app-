@@ -1246,7 +1246,13 @@ def leer_sku():
         return jsonify({'error': 'No se pudo conectar con el servicio de lectura'}), 502
     except anthropic.APIStatusError as ex:
         print(f'  Error leyendo SKU: {ex.status_code} {ex.message}')
-        return jsonify({'error': 'No se pudo leer la foto, probá de nuevo'}), 502
+        if ex.status_code == 401:
+            msg = 'La clave ANTHROPIC_API_KEY del servidor no es válida'
+        elif ex.status_code == 400 and 'credit' in str(ex.message).lower():
+            msg = 'La cuenta de Anthropic no tiene saldo'
+        else:
+            msg = f'No se pudo leer la foto, probá de nuevo (error {ex.status_code})'
+        return jsonify({'error': msg, 'detalle': str(ex.message)[:300]}), 502
 
     if resp.stop_reason == 'refusal':
         return jsonify({'error': 'No se pudo leer la foto, probá de nuevo'}), 502
