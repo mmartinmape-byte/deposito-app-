@@ -2,8 +2,7 @@ from flask import Flask, render_template, request, jsonify, redirect, send_file
 from sqlalchemy import create_engine, text, event
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
-import os, io, re, json, base64, difflib, requests as req_lib
-import anthropic
+import os, io, re, base64, difflib, requests as req_lib
 import openpyxl
 from openpyxl.styles import Font as XlFont, PatternFill
 
@@ -1198,72 +1197,40 @@ def buscar_sku():
 
 @app.route('/api/sku/leer', methods=['POST'])
 def leer_sku():
-    """Recibe una foto de un SKU escrito (a mano o impreso), lo lee con Claude y lo busca."""
-    parsed = _parse_data_url((request.get_json(silent=True) or {}).get('imagen'))
-    if not parsed:
-        return jsonify({'error': 'Imagen inválida o demasiado grande'}), 400
-    if not os.environ.get('ANTHROPIC_API_KEY'):
-        return jsonify({'error': 'Falta configurar ANTHROPIC_API_KEY en el servidor'}), 500
-    mime, b64 = parsed
+    """Busca el texto leído con OCR en el celular; no recibe ni analiza la foto."""
+    data = request.get_json(silent=True)
+    texto = data.get('texto') if isinstance(data, dict) else None
+    if not isinstance(texto, str) or len(texto) > 4000:
+        return jsonify({'error': 'Texto OCR inválido. Recargá la página y probá de nuevo.'}), 400
+    candidatos = []
+    for linea in texto.upper().splitlines():
+        partes = re.findall(r'[A-Z0-9]+', linea)[:80]
+        for i in range(len(partes)):
+            if partes[i] == 'SKU':
+                continue
+            for fin in range(i + 1, min(i + 4, len(partes)) + 1):
+                candidato = ''.join(partes[i:fin])
+                if 3 <= len(candidato) <= 64 and candidato not in candidatos:
+                    candidatos.append(candidato)
 
-    skus = sorted({p['sku'] for p in _catalogo_skus()})
-    prompt = (
-        'La foto muestra un código SKU de producto escrito a mano o impreso '
-        '(en una caja, etiqueta o papel). Leé el código tal cual está escrito.\n'
-        'Estos son los SKU del catálogo; si el código leído corresponde a uno de ellos '
-        '(aunque haya letras dudosas como 0/O, 1/I, 5/S, 8/B), indicalo en sku_catalogo; '
-        'si no corresponde a ninguno, dejá sku_catalogo vacío.\n\n'
-        'SKUs del catálogo: ' + ', '.join(skus)
-    )
-    try:
-        client = anthropic.Anthropic()
-        resp = client.beta.messages.create(
-            model='claude-opus-5-5',
-            max_tokens=2000,
-            betas=['server-side-fallback-2026-06-01'],
-            fallbacks=[{'model': 'claude-opus-4-8'}],
-            output_config={
-                'effort': 'low',
-                'format': {
-                    'type': 'json_schema',
-                    'schema': {
-                        'type': 'object',
-                        'properties': {
-                            'sku_leido':    {'type': 'string'},
-                            'sku_catalogo': {'type': 'string'},
-                        },
-                        'required': ['sku_leido', 'sku_catalogo'],
-                        'additionalProperties': False,
-                    },
-                },
-            },
-            messages=[{'role': 'user', 'content': [
-                {'type': 'image', 'source': {'type': 'base64', 'media_type': mime, 'data': b64}},
-                {'type': 'text', 'text': prompt},
-            ]}],
-        )
-    except anthropic.APIConnectionError:
-        return jsonify({'error': 'No se pudo conectar con el servicio de lectura'}), 502
-    except anthropic.APIStatusError as ex:
-        print(f'  Error leyendo SKU: {ex.status_code} {ex.message}')
-        if ex.status_code == 401:
-            msg = 'La clave ANTHROPIC_API_KEY del servidor no es válida'
-        elif ex.status_code == 400 and 'credit' in str(ex.message).lower():
-            msg = 'La cuenta de Anthropic no tiene saldo'
-        else:
-            msg = f'No se pudo leer la foto, probá de nuevo (error {ex.status_code})'
-        return jsonify({'error': msg, 'detalle': str(ex.message)[:300]}), 502
+    conocidos = {_norm_sku(p['sku']) for p in _catalogo_skus()}
+    exactos = [c for c in candidatos if c in conocidos]
+    # Una foto con varios códigos debe mostrar todas las coincidencias, sin elegir a ciegas.
+    if exactos:
+        resultados = []
+        for c in exactos:
+            resultados.extend(p for p in _resolver_sku(c)['resultados'] if _norm_sku(p['sku']) == c)
+        aviso = 'Se leyeron varios SKU. Revisá cuál corresponde al producto.' if len(exactos) > 1 else ''
+        return jsonify({'leido': exactos[0], 'exacto': True, 'resultados': resultados, 'aviso': aviso})
 
-    if resp.stop_reason == 'refusal':
-        return jsonify({'error': 'No se pudo leer la foto, probá de nuevo'}), 502
-    txt = next((b.text for b in resp.content if b.type == 'text'), '{}')
-    try:
-        datos = json.loads(txt)
-    except ValueError:
-        datos = {}
-    leido = (datos.get('sku_leido') or '').strip().upper()
-    sugerido = (datos.get('sku_catalogo') or '').strip().upper()
-    return jsonify({'leido': leido, **_resolver_sku(leido, sugerido)})
+    # Ignorar palabras de la etiqueta para que no desplacen un código mal leído.
+    codigos = [c for c in candidatos if any(ch.isdigit() for ch in c)]
+    if not codigos:
+        return jsonify({'leido': '', 'exacto': False, 'resultados': []})
+    def parecido(c):
+        return max((difflib.SequenceMatcher(None, c, sku).ratio() for sku in conocidos), default=0)
+    leido = max(codigos, key=parecido)
+    return jsonify({'leido': leido, **_resolver_sku(leido)})
 
 
 @app.route('/api/reset', methods=['DELETE'])
