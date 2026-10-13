@@ -1190,6 +1190,8 @@ def borrar_foto(sku):
 @app.route('/api/sku/buscar')
 def buscar_sku():
     q = request.args.get('q', '').strip()
+    # CODE y SKU son etiquetas equivalentes, no forman parte del código.
+    q = re.sub(r'^(?:SKU|CODE)\b[\s:#=\-]*', '', q, flags=re.IGNORECASE).strip()
     if not q:
         return jsonify({'leido': '', 'exacto': False, 'resultados': []})
     return jsonify({'leido': q.upper(), **_resolver_sku(q)})
@@ -1202,18 +1204,28 @@ def leer_sku():
     texto = data.get('texto') if isinstance(data, dict) else None
     if not isinstance(texto, str) or len(texto) > 4000:
         return jsonify({'error': 'Texto OCR inválido. Recargá la página y probá de nuevo.'}), 400
+    conocidos = {_norm_sku(p['sku']) for p in _catalogo_skus()}
     candidatos = []
     for linea in texto.upper().splitlines():
         partes = re.findall(r'[A-Z0-9]+', linea)[:80]
         for i in range(len(partes)):
-            if partes[i] == 'SKU':
+            if partes[i] in ('SKU', 'CODE'):
                 continue
             for fin in range(i + 1, min(i + 4, len(partes)) + 1):
+                if any(p in ('SKU', 'CODE') for p in partes[i:fin]):
+                    break
                 candidato = ''.join(partes[i:fin])
                 if 3 <= len(candidato) <= 64 and candidato not in candidatos:
                     candidatos.append(candidato)
+                # El OCR a veces pega la etiqueta al código (CODEUBBU75174).
+                # Conservar un SKU real que ya incluya ese prefijo.
+                if candidato not in conocidos:
+                    for prefijo in ('CODE', 'SKU'):
+                        if candidato.startswith(prefijo) and candidato[len(prefijo):] in conocidos:
+                            limpio = candidato[len(prefijo):]
+                            if limpio not in candidatos:
+                                candidatos.append(limpio)
 
-    conocidos = {_norm_sku(p['sku']) for p in _catalogo_skus()}
     exactos = [c for c in candidatos if c in conocidos]
     # Una foto con varios códigos debe mostrar todas las coincidencias, sin elegir a ciegas.
     if exactos:

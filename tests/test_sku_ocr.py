@@ -43,6 +43,20 @@ class SkuOCRTest(unittest.TestCase):
         self.assertEqual(self.read('ab-123')['resultados'][0]['sku'], 'AB-123')
         self.assertTrue(self.read('MAPE12345')['resultados'][0]['mape'])
 
+    def test_code_label_means_sku(self):
+        for sample in ('CODE: UBBU75174', 'code UBBU 75174', 'CODE\nUBBU75174', 'CODEUBBU75174'):
+            data = self.read(sample)
+            self.assertTrue(data['exacto'], sample)
+            self.assertEqual(data['leido'], 'UBBU75174', sample)
+        for sample in ('CODE: U8BU75174', 'SKU: U8BU75174'):
+            data = self.read(sample)
+            self.assertFalse(data['exacto'])
+            self.assertEqual(data['leido'], 'U8BU75174')
+        self.assertEqual(self.read('CODE')['resultados'], [])
+        data = self.client.get('/api/sku/buscar', query_string={'q': 'CODE: UBBU75174'}).get_json()
+        self.assertTrue(data['exacto'])
+        self.assertEqual(data['leido'], 'UBBU75174')
+
     def test_ocr_confusion_is_only_suggestion(self):
         data = self.read('SKU U8BU75174')
         self.assertFalse(data['exacto'])
