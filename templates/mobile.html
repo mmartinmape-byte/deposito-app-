@@ -321,6 +321,26 @@
     border-radius: 50%; animation: spin .6s linear infinite; display: inline-block;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Lector de SKU por foto */
+  .btn-camara { background: var(--navy); color: #fff; font-size: 1.1rem; padding: 18px; }
+  .sku-preview { width: 100%; max-height: 180px; object-fit: contain; border-radius: 10px;
+                 background: var(--gray-100); margin-top: 12px; }
+  .sku-leido { margin-top: 14px; font-size: .85rem; color: var(--gray-600); }
+  .sku-leido strong { font-size: 1.15rem; color: var(--navy); letter-spacing: .5px; }
+  .sku-res { border: 1px solid var(--gray-200); border-radius: 12px; overflow: hidden; margin-top: 14px; }
+  .sku-res img { width: 100%; max-height: 320px; object-fit: contain; background: #fff; display: block; }
+  .sku-sinfoto { background: var(--gray-100); color: var(--gray-400); text-align: center;
+                 padding: 28px 12px; font-size: .9rem; }
+  .sku-info { padding: 12px 14px; }
+  .sku-nombre { font-size: 1.2rem; font-weight: 800; color: var(--gray-800); }
+  .sku-sub { font-size: .85rem; color: var(--gray-600); margin-top: 4px; }
+  .sku-stock { margin-top: 10px; font-size: .85rem; }
+  .sku-stock div { padding: 4px 0; border-top: 1px solid var(--gray-100); }
+  .sku-foto-btn { margin-top: 10px; background: none; border: 1.5px dashed var(--gray-400);
+                  color: var(--gray-600); border-radius: 10px; padding: 10px; width: 100%;
+                  font-size: .9rem; font-weight: 600; }
+  .sku-aviso { margin-top: 14px; font-size: .85rem; color: #b45309; background: #fffbeb;
+               border-radius: 10px; padding: 10px 12px; }
 </style>
 </head>
 <body>
@@ -434,6 +454,29 @@
       </div>
     </div>
 
+    <!-- ══ SKU (leer por foto) ══ -->
+    <div id="view-sku" class="view">
+      <div class="tab-title">Identificar por SKU</div>
+      <div class="card">
+        <div class="card-title">Sacale una foto al SKU escrito</div>
+        <input type="file" id="sku-cam" accept="image/*" capture="environment" hidden onchange="leerSkuFoto(this)">
+        <button class="btn btn-camara" id="sku-cam-btn" onclick="document.getElementById('sku-cam').click()">
+          📷 Sacar foto del SKU
+        </button>
+        <img id="sku-preview" class="sku-preview" hidden alt="">
+
+        <label style="margin-top:18px">O escribilo</label>
+        <div class="search-wrapper">
+          <input type="text" id="sku-manual" placeholder="Ej: UBBU75174" autocomplete="off"
+                 autocapitalize="characters" style="text-transform:uppercase">
+        </div>
+        <button class="btn btn-buscar" style="margin-top:12px" onclick="buscarSkuManual()">Buscar</button>
+
+        <div id="sku-resultado"></div>
+        <input type="file" id="sku-foto-prod" accept="image/*" capture="environment" hidden onchange="subirFotoProducto(this)">
+      </div>
+    </div>
+
   </main>
 
   <nav>
@@ -454,6 +497,12 @@
         <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
       </svg>
       Stock
+    </button>
+    <button onclick="switchTab('sku')" id="nav-sku">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+      </svg>
+      SKU
     </button>
   </nav>
 </div>
@@ -530,7 +579,7 @@ async function loadProductos() {
 
 // ── Navegación ────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  ['ingreso','egreso','stock'].forEach(t => {
+  ['ingreso','egreso','stock','sku'].forEach(t => {
     document.getElementById('view-' + t).classList.toggle('active', t === tab);
     document.getElementById('nav-'  + t).classList.toggle('active', t === tab);
   });
@@ -862,6 +911,133 @@ document.getElementById('stock-search-clear').addEventListener('click', () => {
   document.getElementById('stock-search').value = '';
   document.getElementById('stock-search-results').innerHTML = '';
 });
+
+// ── SKU por foto ──────────────────────────────────────────────────────────
+// Achica la foto en el celular antes de subirla (las de cámara pesan varios MB)
+function achicarImagen(file, maxLado, calidad) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxLado / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k);
+      c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', calidad));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo abrir la foto')); };
+    img.src = url;
+  });
+}
+
+async function leerSkuFoto(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  const btn = document.getElementById('sku-cam-btn');
+  const res = document.getElementById('sku-resultado');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Leyendo SKU…';
+  res.innerHTML = '';
+  try {
+    const dataUrl = await achicarImagen(file, 1600, 0.85);
+    const prev = document.getElementById('sku-preview');
+    prev.src = dataUrl; prev.hidden = false;
+    const r = await fetch('/api/sku/leer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imagen: dataUrl })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Error leyendo la foto');
+    document.getElementById('sku-manual').value = data.leido || '';
+    renderSkuResultado(data);
+  } catch (e) {
+    res.innerHTML = `<div class="sku-aviso">${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '📷 Sacar foto del SKU';
+  }
+}
+
+async function buscarSkuManual() {
+  const q = document.getElementById('sku-manual').value.trim();
+  const res = document.getElementById('sku-resultado');
+  if (!q) { res.innerHTML = ''; return; }
+  document.getElementById('sku-preview').hidden = true;
+  res.innerHTML = '<div class="empty">Buscando…</div>';
+  try {
+    const r = await fetch('/api/sku/buscar?q=' + encodeURIComponent(q));
+    renderSkuResultado(await r.json());
+  } catch (e) {
+    res.innerHTML = '<div class="empty">Error en la búsqueda</div>';
+  }
+}
+
+document.getElementById('sku-manual').addEventListener('keydown', e => {
+  if (e.key === 'Enter') buscarSkuManual();
+});
+
+let _skuUltimo = null;
+function renderSkuResultado(data) {
+  _skuUltimo = data;
+  const res = document.getElementById('sku-resultado');
+  const leido = data.leido
+    ? `<div class="sku-leido">SKU leído: <strong>${escHtml(data.leido)}</strong></div>`
+    : '<div class="sku-leido">No se pudo leer ningún código en la foto.</div>';
+  if (!data.resultados.length) {
+    res.innerHTML = leido + '<div class="sku-aviso">No hay ningún producto con ese SKU en el catálogo.</div>';
+    return;
+  }
+  const aviso = data.exacto ? '' :
+    '<div class="sku-aviso">No coincide exacto. Estos son los productos más parecidos:</div>';
+  const t = Date.now();
+  res.innerHTML = leido + aviso + data.resultados.map((p, i) => `
+    <div class="sku-res">
+      ${p.tiene_foto
+        ? `<img src="/api/fotos/${encodeURIComponent(p.sku)}?t=${t}" alt="${escHtml(p.nombre)}">`
+        : '<div class="sku-sinfoto">Sin foto cargada</div>'}
+      <div class="sku-info">
+        <div class="sku-nombre">${escHtml(p.nombre)}</div>
+        <div class="sku-sub">${p.color ? escHtml(p.color) + ' · ' : ''}SKU <strong>${escHtml(p.sku)}</strong>${p.mape ? ' · MAPE' : ''}</div>
+        <div class="sku-stock">
+          ${p.stock.length
+            ? p.stock.map(s => `<div>Palet <strong>${escHtml(s.palet_codigo)}</strong>${s.palet_desc ? ' — ' + escHtml(s.palet_desc) : ''}: <strong>${s.cajas} caj.</strong>${s.piezas_por_caja ? ' · ' + s.piezas_por_caja + ' pzas/caja' : ''}</div>`).join('')
+            : '<div>Sin stock en el depósito</div>'}
+        </div>
+        <button class="sku-foto-btn" onclick="elegirFotoProducto(${i})">
+          📷 ${p.tiene_foto ? 'Cambiar foto del producto' : 'Cargar foto del producto'}
+        </button>
+      </div>
+    </div>`).join('');
+}
+
+let _skuFotoDestino = '';
+function elegirFotoProducto(i) {
+  _skuFotoDestino = _skuUltimo.resultados[i].sku;
+  document.getElementById('sku-foto-prod').click();
+}
+
+async function subirFotoProducto(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file || !_skuFotoDestino) return;
+  try {
+    const dataUrl = await achicarImagen(file, 900, 0.8);
+    const r = await fetch('/api/fotos/' + encodeURIComponent(_skuFotoDestino), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imagen: dataUrl })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Error guardando la foto');
+    toast('Foto guardada');
+    _skuUltimo.resultados.forEach(p => { if (p.sku === _skuFotoDestino) p.tiene_foto = true; });
+    renderSkuResultado(_skuUltimo);
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────
 let _toastTimer;

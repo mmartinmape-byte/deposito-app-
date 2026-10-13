@@ -256,11 +256,12 @@ input:focus,select:focus{border-color:var(--blue)}
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>SKU</th><th>Nombre</th><th>Color</th><th></th></tr>
+        <tr><th>Foto</th><th>SKU</th><th>Nombre</th><th>Color</th><th></th></tr>
       </thead>
       <tbody id="catalogo-tbody"></tbody>
     </table>
   </div>
+  <input type="file" id="cat-foto-input" accept="image/*" hidden onchange="subirFotoCatalogo(this)">
 </section>
 
 <!-- ─── MOVIMIENTO ────────────────────────────────────────────────────────── -->
@@ -787,14 +788,20 @@ async function borrarPalet(id, codigo) {
 
 // ── Catálogo ──────────────────────────────────────────────────────────────────
 async function loadCatalogoSection() {
-  catalogo = await get('/api/productos');
+  const [cat, fotos] = await Promise.all([get('/api/productos'), get('/api/fotos')]);
+  catalogo = cat;
+  const conFoto = new Set(fotos);
+  const t = Date.now();
   const tbody = document.getElementById('catalogo-tbody');
   if (!catalogo.length) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--g400);padding:2rem">No hay productos en el catálogo. Agregá el primero.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--g400);padding:2rem">No hay productos en el catálogo. Agregá el primero.</td></tr>`;
     return;
   }
   tbody.innerHTML = catalogo.map(p => `
     <tr>
+      <td>${conFoto.has(p.sku.toUpperCase())
+        ? `<img src="/api/fotos/${encodeURIComponent(p.sku)}?t=${t}" alt="" title="Cambiar foto" onclick="elegirFotoCatalogo(${p.id})" style="width:48px;height:48px;object-fit:cover;border-radius:6px;cursor:pointer;display:block">`
+        : `<button class="btn btn-ghost" onclick="elegirFotoCatalogo(${p.id})" title="Cargar foto">📷</button>`}</td>
       <td><strong>${e(p.sku)}</strong></td>
       <td>${e(p.nombre)}</td>
       <td>${e(p.color || '—')}</td>
@@ -803,6 +810,45 @@ async function loadCatalogoSection() {
         <button class="btn btn-danger" onclick="borrarProducto(${p.id})">Eliminar</button>
       </td>
     </tr>`).join('');
+}
+
+// Foto del producto (se ve en el celular, pestaña SKU). Una por SKU.
+let _fotoSkuDestino = '';
+function elegirFotoCatalogo(id) {
+  _fotoSkuDestino = catalogo.find(x => x.id === id)?.sku || '';
+  document.getElementById('cat-foto-input').click();
+}
+
+function achicarImagen(file, maxLado, calidad) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxLado / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k);
+      c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', calidad));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo abrir la imagen')); };
+    img.src = url;
+  });
+}
+
+async function subirFotoCatalogo(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file || !_fotoSkuDestino) return;
+  try {
+    const imagen = await achicarImagen(file, 900, 0.8);
+    const r = await post('/api/fotos/' + encodeURIComponent(_fotoSkuDestino), { imagen });
+    if (r.error) throw new Error(r.error);
+    loadCatalogoSection();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
 }
 
 function openModalProducto(prod = null) {

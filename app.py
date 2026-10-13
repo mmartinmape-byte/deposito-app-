@@ -2,7 +2,8 @@ from flask import Flask, render_template, request, jsonify, redirect, send_file
 from sqlalchemy import create_engine, text, event
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
-import os, io, requests as req_lib
+import os, io, re, json, base64, difflib, requests as req_lib
+import anthropic
 import openpyxl
 from openpyxl.styles import Font as XlFont, PatternFill
 
@@ -321,6 +322,20 @@ def migrate_db():
                 print('  Migración aplicada: columna costo en mape_productos.')
     except Exception as ex:
         print(f'  Aviso migración mape_productos.costo: {ex}')
+
+    # Fotos de productos (una por SKU; tabla aparte para no inflar /api/productos)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS producto_fotos (
+                    sku    TEXT PRIMARY KEY,
+                    mime   TEXT NOT NULL,
+                    data   TEXT NOT NULL,
+                    fecha  TEXT
+                )
+            """))
+    except Exception as ex:
+        print(f'  Aviso migración producto_fotos: {ex}')
 
 
 init_db()
@@ -1053,6 +1068,196 @@ def buscar():
             ORDER BY s.producto, s.color, p.codigo
         '''), {'q': like}).fetchall()
     return jsonify([_row(r) for r in rows])
+
+
+# ── Fotos de productos y lectura de SKU por foto ──────────────────────────────
+
+FOTO_MAX_BYTES = 1_500_000  # el front ya las achica (~150 KB); tope por las dudas
+
+
+def _parse_data_url(data_url):
+    """'data:image/jpeg;base64,XXXX' → (mime, base64). None si no es imagen válida."""
+    if not data_url or not data_url.startswith('data:image/') or ';base64,' not in data_url:
+        return None
+    head, b64 = data_url.split(';base64,', 1)
+    mime = head[5:]
+    if mime not in ('image/jpeg', 'image/png', 'image/webp', 'image/gif'):
+        return None
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except Exception:
+        return None
+    if len(raw) > FOTO_MAX_BYTES:
+        return None
+    return mime, b64
+
+
+def _norm_sku(s):
+    return re.sub(r'[^A-Z0-9]', '', (s or '').upper())
+
+
+def _catalogo_skus():
+    """Todos los productos (catálogo general + MAPE) con SKU."""
+    with engine.connect() as conn:
+        gen = conn.execute(text('SELECT nombre, sku, color FROM productos')).fetchall()
+        try:
+            mape = conn.execute(text('SELECT nombre, sku, color FROM mape_productos')).fetchall()
+        except Exception:
+            mape = []
+    out = [dict(_row(r), mape=False) for r in gen] + [dict(_row(r), mape=True) for r in mape]
+    return [p for p in out if p.get('sku')]
+
+
+def _resolver_sku(texto, sugerido=None):
+    """Busca en el catálogo el SKU leído: exacto (ignorando guiones/espacios) o parecido."""
+    prods = _catalogo_skus()
+    por_norm = {}
+    for p in prods:
+        por_norm.setdefault(_norm_sku(p['sku']), []).append(p)
+
+    orden = []
+    for cand in (texto, sugerido):
+        n = _norm_sku(cand)
+        if n and n in por_norm and n not in orden:
+            orden.append(n)
+    exacto = bool(orden) and orden[0] == _norm_sku(texto)
+    n_txt = _norm_sku(texto)
+    if n_txt:
+        for n in difflib.get_close_matches(n_txt, list(por_norm), n=4, cutoff=0.6):
+            if n not in orden:
+                orden.append(n)
+
+    with engine.connect() as conn:
+        con_foto = {r[0] for r in conn.execute(text('SELECT sku FROM producto_fotos')).fetchall()}
+        resultados = []
+        for n in orden[:4]:
+            for p in por_norm[n]:
+                stock = conn.execute(text('''
+                    SELECT s.cajas, s.piezas_por_caja, pa.codigo AS palet_codigo,
+                           pa.descripcion AS palet_desc
+                    FROM stock s JOIN palets pa ON s.palet_id = pa.id
+                    WHERE LOWER(s.producto) = LOWER(:n) AND LOWER(s.color) = LOWER(:c)
+                      AND s.cajas > 0
+                    ORDER BY pa.codigo
+                '''), {'n': p['nombre'], 'c': p['color'] or ''}).fetchall()
+                resultados.append({
+                    'nombre': p['nombre'], 'sku': p['sku'], 'color': p['color'] or '',
+                    'mape': p['mape'], 'tiene_foto': p['sku'].upper() in con_foto,
+                    'stock': [_row(s) for s in stock],
+                })
+    return {'exacto': exacto, 'resultados': resultados}
+
+
+@app.route('/api/fotos')
+def listar_fotos():
+    with engine.connect() as conn:
+        rows = conn.execute(text('SELECT sku FROM producto_fotos')).fetchall()
+    return jsonify([r[0] for r in rows])
+
+
+@app.route('/api/fotos/<path:sku>')
+def ver_foto(sku):
+    with engine.connect() as conn:
+        r = conn.execute(text('SELECT mime, data FROM producto_fotos WHERE sku=:s'),
+                         {'s': sku.strip().upper()}).fetchone()
+    if not r:
+        return jsonify({'error': 'Sin foto'}), 404
+    resp = send_file(io.BytesIO(base64.b64decode(r[1])), mimetype=r[0])
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@app.route('/api/fotos/<path:sku>', methods=['POST'])
+def guardar_foto(sku):
+    sku = sku.strip().upper()
+    parsed = _parse_data_url((request.get_json(silent=True) or {}).get('imagen'))
+    if not sku or not parsed:
+        return jsonify({'error': 'Imagen inválida o demasiado grande'}), 400
+    mime, b64 = parsed
+    with engine.begin() as conn:
+        conn.execute(text('DELETE FROM producto_fotos WHERE sku=:s'), {'s': sku})
+        conn.execute(text('INSERT INTO producto_fotos (sku, mime, data, fecha) VALUES (:s,:m,:d,:f)'),
+                     {'s': sku, 'm': mime, 'd': b64, 'f': _now()})
+    return jsonify({'ok': True})
+
+
+@app.route('/api/fotos/<path:sku>', methods=['DELETE'])
+def borrar_foto(sku):
+    with engine.begin() as conn:
+        conn.execute(text('DELETE FROM producto_fotos WHERE sku=:s'), {'s': sku.strip().upper()})
+    return jsonify({'ok': True})
+
+
+@app.route('/api/sku/buscar')
+def buscar_sku():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'leido': '', 'exacto': False, 'resultados': []})
+    return jsonify({'leido': q.upper(), **_resolver_sku(q)})
+
+
+@app.route('/api/sku/leer', methods=['POST'])
+def leer_sku():
+    """Recibe una foto de un SKU escrito (a mano o impreso), lo lee con Claude y lo busca."""
+    parsed = _parse_data_url((request.get_json(silent=True) or {}).get('imagen'))
+    if not parsed:
+        return jsonify({'error': 'Imagen inválida o demasiado grande'}), 400
+    if not os.environ.get('ANTHROPIC_API_KEY'):
+        return jsonify({'error': 'Falta configurar ANTHROPIC_API_KEY en el servidor'}), 500
+    mime, b64 = parsed
+
+    skus = sorted({p['sku'] for p in _catalogo_skus()})
+    prompt = (
+        'La foto muestra un código SKU de producto escrito a mano o impreso '
+        '(en una caja, etiqueta o papel). Leé el código tal cual está escrito.\n'
+        'Estos son los SKU del catálogo; si el código leído corresponde a uno de ellos '
+        '(aunque haya letras dudosas como 0/O, 1/I, 5/S, 8/B), indicalo en sku_catalogo; '
+        'si no corresponde a ninguno, dejá sku_catalogo vacío.\n\n'
+        'SKUs del catálogo: ' + ', '.join(skus)
+    )
+    try:
+        client = anthropic.Anthropic()
+        resp = client.beta.messages.create(
+            model='claude-opus-5-5',
+            max_tokens=2000,
+            betas=['server-side-fallback-2026-06-01'],
+            fallbacks=[{'model': 'claude-opus-4-8'}],
+            output_config={
+                'effort': 'low',
+                'format': {
+                    'type': 'json_schema',
+                    'schema': {
+                        'type': 'object',
+                        'properties': {
+                            'sku_leido':    {'type': 'string'},
+                            'sku_catalogo': {'type': 'string'},
+                        },
+                        'required': ['sku_leido', 'sku_catalogo'],
+                        'additionalProperties': False,
+                    },
+                },
+            },
+            messages=[{'role': 'user', 'content': [
+                {'type': 'image', 'source': {'type': 'base64', 'media_type': mime, 'data': b64}},
+                {'type': 'text', 'text': prompt},
+            ]}],
+        )
+    except anthropic.APIConnectionError:
+        return jsonify({'error': 'No se pudo conectar con el servicio de lectura'}), 502
+    except anthropic.APIStatusError as ex:
+        print(f'  Error leyendo SKU: {ex.status_code} {ex.message}')
+        return jsonify({'error': 'No se pudo leer la foto, probá de nuevo'}), 502
+
+    if resp.stop_reason == 'refusal':
+        return jsonify({'error': 'No se pudo leer la foto, probá de nuevo'}), 502
+    txt = next((b.text for b in resp.content if b.type == 'text'), '{}')
+    try:
+        datos = json.loads(txt)
+    except ValueError:
+        datos = {}
+    leido = (datos.get('sku_leido') or '').strip().upper()
+    sugerido = (datos.get('sku_catalogo') or '').strip().upper()
+    return jsonify({'leido': leido, **_resolver_sku(leido, sugerido)})
 
 
 @app.route('/api/reset', methods=['DELETE'])
