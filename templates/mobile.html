@@ -459,11 +459,13 @@
       <div class="tab-title">Identificar por SKU</div>
       <div class="card">
         <div class="card-title">Sacale una foto al SKU escrito</div>
+        <p style="font-size:.85rem;color:var(--gray-600)">Acercá la cámara al código, con buena luz. Revisá lo leído: la letra manuscrita puede necesitar una corrección.</p>
         <input type="file" id="sku-cam" accept="image/*" capture="environment" hidden onchange="leerSkuFoto(this)">
         <button class="btn btn-camara" id="sku-cam-btn" onclick="document.getElementById('sku-cam').click()">
           📷 Sacar foto del SKU
         </button>
         <img id="sku-preview" class="sku-preview" hidden alt="">
+        <div id="sku-progreso" role="status" aria-live="polite" style="margin-top:10px;font-size:.85rem"></div>
 
         <label style="margin-top:18px">O escribilo</label>
         <div class="search-wrapper">
@@ -932,46 +934,66 @@ function achicarImagen(file, maxLado, calidad) {
   });
 }
 
+let skuLecturaVersion = 0;
+let skuLeyendo = false;
 async function leerSkuFoto(input) {
   const file = input.files[0];
   input.value = '';
-  if (!file) return;
+  if (!file || skuLeyendo) return;
+  skuLeyendo = true;
+  const version = ++skuLecturaVersion;
   const btn = document.getElementById('sku-cam-btn');
   const res = document.getElementById('sku-resultado');
+  const estado = document.getElementById('sku-progreso');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Leyendo SKU…';
   res.innerHTML = '';
+  document.getElementById('sku-manual').value = '';
+  estado.textContent = 'Preparando lector…';
   try {
-    const dataUrl = await achicarImagen(file, 1600, 0.85);
+    const dataUrl = await achicarImagen(file, 2200, 0.95);
     const prev = document.getElementById('sku-preview');
     prev.src = dataUrl; prev.hidden = false;
+    const texto = await SkuOCR.readImage(dataUrl, msg => {
+      if (version === skuLecturaVersion) estado.textContent = msg;
+    });
+    if (version !== skuLecturaVersion) return;
+    if (!texto.trim()) throw new Error('No se pudo leer el código. Acercá la cámara, mejorá la luz o escribí el SKU.');
+    estado.textContent = 'Buscando en el catálogo…';
     const r = await fetch('/api/sku/leer', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imagen: dataUrl })
+      body: JSON.stringify({ texto })
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Error leyendo la foto');
+    if (version !== skuLecturaVersion) return;
     document.getElementById('sku-manual').value = data.leido || '';
     renderSkuResultado(data);
   } catch (e) {
-    res.innerHTML = `<div class="sku-aviso">${escHtml(e.message)}</div>`;
+    if (version === skuLecturaVersion) res.innerHTML = `<div class="sku-aviso">${escHtml(e.message)}</div>`;
   } finally {
+    skuLeyendo = false;
+    estado.textContent = '';
     btn.disabled = false;
     btn.innerHTML = '📷 Sacar foto del SKU';
   }
 }
 
 async function buscarSkuManual() {
+  const version = ++skuLecturaVersion;
   const q = document.getElementById('sku-manual').value.trim();
   const res = document.getElementById('sku-resultado');
+  document.getElementById('sku-progreso').textContent = '';
   if (!q) { res.innerHTML = ''; return; }
   document.getElementById('sku-preview').hidden = true;
   res.innerHTML = '<div class="empty">Buscando…</div>';
   try {
     const r = await fetch('/api/sku/buscar?q=' + encodeURIComponent(q));
-    renderSkuResultado(await r.json());
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Error en la búsqueda');
+    if (version === skuLecturaVersion) renderSkuResultado(data);
   } catch (e) {
-    res.innerHTML = '<div class="empty">Error en la búsqueda</div>';
+    if (version === skuLecturaVersion) res.innerHTML = '<div class="empty">Error en la búsqueda</div>';
   }
 }
 
@@ -990,7 +1012,7 @@ function renderSkuResultado(data) {
     res.innerHTML = leido + '<div class="sku-aviso">No hay ningún producto con ese SKU en el catálogo.</div>';
     return;
   }
-  const aviso = data.exacto ? '' :
+  const aviso = data.aviso ? `<div class="sku-aviso">${escHtml(data.aviso)}</div>` : data.exacto ? '' :
     '<div class="sku-aviso">No coincide exacto. Estos son los productos más parecidos:</div>';
   const t = Date.now();
   res.innerHTML = leido + aviso + data.resultados.map((p, i) => `
@@ -1056,5 +1078,6 @@ function escHtml(str) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
+<script src="{{ url_for('static', filename='sku-ocr.js') }}"></script>
 </body>
 </html>
