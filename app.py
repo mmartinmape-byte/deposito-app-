@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, redirect, send_file
 from sqlalchemy import create_engine, text, event
 from sqlalchemy.exc import IntegrityError
+from product_identity import rename_inventory, IdentityConflict
 from datetime import datetime, timezone, timedelta
 import os, io, re, base64, difflib, requests as req_lib
 import openpyxl
@@ -656,11 +657,17 @@ def update_producto(pid):
         return jsonify({'error': 'Nombre y SKU son obligatorios'}), 400
     try:
         with engine.begin() as conn:
+            previous = conn.execute(text('SELECT nombre, color FROM productos WHERE id=:id'), {'id': pid}).first()
+            if previous is None:
+                return jsonify({'error': 'Producto no encontrado'}), 404
+            rename_inventory(conn, pid, previous.nombre, previous.color, nombre, color)
             conn.execute(
                 text('UPDATE productos SET nombre=:n, sku=:s, color=:c WHERE id=:id'),
                 {'n': nombre, 's': sku, 'c': color, 'id': pid}
             )
         return jsonify({'ok': True})
+    except IdentityConflict as error:
+        return jsonify({'error': str(error)}), 409
     except IntegrityError:
         return jsonify({'error': 'Ya existe ese SKU con ese color'}), 400
 
